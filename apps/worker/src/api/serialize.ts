@@ -57,6 +57,8 @@ export function serializeMessage(
     spamReasons: r.spamReasons,
     spamAuth: r.spamAuth,
     listUnsubscribe: r.listUnsubscribe,
+    otpCode: r.otpCode,
+    otpOrigin: r.otpOrigin,
     pgpEncrypted: r.pgpEncrypted,
     pgpSigned: r.pgpSigned,
     pgpVerify: r.pgpVerify,

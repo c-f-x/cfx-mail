@@ -356,6 +356,7 @@ describe("thread detail", () => {
         listUnsubscribePost: "List-Unsubscribe=One-Click",
         pgpSignedBy: "ABCDEF",
         inReplyTo: "<parent@elsewhere.test>",
+        otpDomain: "example.test",
       })
       .where(eq(message.id, messageId));
     const res = await request(asOwner(), "GET", `/${threadId}`);
@@ -375,6 +376,8 @@ describe("thread detail", () => {
         "listUnsubscribe",
         "mailboxId",
         "messageIdHdr",
+        "otpCode",
+        "otpOrigin",
         "pgpEncrypted",
         "pgpKey",
         "pgpKeyEvent",
@@ -392,6 +395,20 @@ describe("thread detail", () => {
         "toAddrs",
       ].toSorted(),
     );
+  });
+
+  it("hands the reader the one-time code found at delivery", async () => {
+    const { threadId, messageId } = await seedMsgThread(db(), { direction: "in" });
+    await db()
+      .update(message)
+      .set({ otpCode: "482913", otpDomain: "example.test", otpOrigin: "https://example.test" })
+      .where(eq(message.id, messageId));
+    const res = await request(asOwner(), "GET", `/${threadId}`);
+    const body = (await res.json()) as { messages: { otpCode: string; otpOrigin: string }[] };
+    expect(body.messages[0]).toMatchObject({
+      otpCode: "482913",
+      otpOrigin: "https://example.test",
+    });
   });
 
   it("404s a missing thread", async () => {

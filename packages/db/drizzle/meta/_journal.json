@@ -351,6 +351,13 @@
       "when": 1791635261064,
       "tag": "0049_wandering_agent_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1794438656546,
+      "tag": "0050_abandoned_sue_storm",
+      "breakpoints": true
     }
   ]
 }

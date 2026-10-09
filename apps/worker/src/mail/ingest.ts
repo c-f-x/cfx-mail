@@ -16,7 +16,8 @@ import {
   parseMime,
   snippet,
 } from "./mime.ts";
-import type { AuthResult, SpamEvaluation } from "./spam.ts";
+import { extractOtp } from "./otp.ts";
+import { type AuthResult, parseAuthResults, type SpamEvaluation } from "./spam.ts";
 import { resolveThreadId, threadBumpValues } from "./threads.ts";
 
 export const MAX_EMAIL_BYTES = 25 * 1024 * 1024;
@@ -227,6 +228,10 @@ async function store(
 
   const bodyIndex = bodyForIndex(parsed.text, parsed.html);
   const unsub = extractUnsubscribe(parsed);
+  const otp =
+    opts.direction === "in"
+      ? extractOtp(parsed, spam?.auth ?? parseAuthResults(parsed), bodyIndex)
+      : null;
 
   // Unread badge only moves for inbound mail that arrives unseen.
   const unreadDelta = opts.direction === "in" && !(opts.flags & Flag.SEEN) ? 1 : 0;
@@ -261,6 +266,9 @@ async function store(
     spamAuth: spam ? spam.auth : null,
     listUnsubscribe: unsub.listUnsubscribe,
     listUnsubscribePost: unsub.listUnsubscribePost,
+    otpCode: otp?.code ?? null,
+    otpDomain: otp?.domain ?? null,
+    otpOrigin: otp?.origin ?? null,
     pgpEncrypted: opts.pgp?.encrypted ?? false,
     pgpSigned: opts.pgp?.signed ?? false,
     pgpVerify: opts.pgp?.verify ?? null,

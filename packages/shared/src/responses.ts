@@ -80,6 +80,8 @@ export type MessageDto = Pick<
   | "spamReasons"
   | "spamAuth"
   | "listUnsubscribe"
+  | "otpCode"
+  | "otpOrigin"
   | "pgpEncrypted"
   | "pgpSigned"
   | "pgpVerify"

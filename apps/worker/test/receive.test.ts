@@ -844,6 +844,51 @@ describe("handleInbound — spam filtering (default standard level)", () => {
   });
 });
 
+describe("handleInbound — one-time codes", () => {
+  const SENDER = "noreply@login.elsewhere.com";
+
+  function codeMail(dmarc: string, otpToken: string | null): string {
+    const lines = [
+      `From: Login <${SENDER}>`,
+      `To: Me <${ADDRESS}>`,
+      `Authentication-Results: mx.cloudflare.net; spf=pass; dkim=pass; dmarc=${dmarc}`,
+      "Subject: Your sign-in code",
+    ];
+    if (otpToken) lines.push(`OTP-Token: ${otpToken}`);
+    lines.push("", "Your verification code is:", "", "482913", "", "It expires in 10 minutes.", "");
+    return lines.join("\r\n");
+  }
+
+  async function deliver(raw: string) {
+    await handleInbound(stubInbound({ from: SENDER, to: ADDRESS, raw }), e);
+    return (await db.query.message.findMany({ where: eq(message.mailboxId, MAILBOX_ID) }))[0]!;
+  }
+
+  it("stores the code from the body, for the sender's domain", async () => {
+    const row = await deliver(codeMail("pass", null));
+    expect(row).toMatchObject({
+      otpCode: "482913",
+      otpDomain: "elsewhere.com",
+      otpOrigin: null,
+    });
+  });
+
+  it("binds the code to the site an authenticated OTP-Token header names", async () => {
+    const row = await deliver(codeMail("pass", '"482913"; origin="https://auth.elsewhere.com"'));
+    expect(row).toMatchObject({
+      otpCode: "482913",
+      otpDomain: "auth.elsewhere.com",
+      otpOrigin: "https://auth.elsewhere.com",
+    });
+  });
+
+  it("does not let mail that fails DMARC bind a code to a site", async () => {
+    const row = await deliver(codeMail("fail", '"999111"; origin="https://auth.elsewhere.com"'));
+    expect(row.otpCode).toBe("482913");
+    expect(row.otpOrigin).toBeNull();
+  });
+});
+
 describe("handleInbound — concurrent delivery", () => {
   it("counts every message when four replies to one thread arrive at once", async () => {
     const reply = (n: number) =>
