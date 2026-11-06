@@ -1,3 +1,4 @@
+import { normalizeSubject } from "@cfx-mail/shared/subject";
 import { describe, expect, it } from "vitest";
 import type { ParsedEmail } from "../src/mail/mime.ts";
 import {
@@ -7,7 +8,6 @@ import {
   buildThreadingHeaders,
   extractUnsubscribe,
   htmlToText,
-  normalizeSubject,
   snippet,
 } from "../src/mail/mime.ts";
 

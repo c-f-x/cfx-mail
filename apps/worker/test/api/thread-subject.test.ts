@@ -1,4 +1,5 @@
 import { folder, message, thread, threadFolder } from "@cfx-mail/db/schema";
+import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { foldersRoutes } from "../../src/api/folders.ts";
 import { threadsRoutes } from "../../src/api/threads.ts";
@@ -118,5 +119,17 @@ describe("thread subject", () => {
     };
     expect(body.thread.subject).toBe("Quarterly Report Q3");
     expect(body.messages[0]!.subject).toBe(body.thread.subject);
+  });
+
+  it("names a thread that started without a subject after the first reply that has one", async () => {
+    await db().update(message).set({ subject: " " }).where(eq(message.id, "m-1"));
+    const listed = (await (
+      await request(mountApp(threadsRoutes, owner), "GET", `/?mailboxId=${MAILBOX_ID}`)
+    ).json()) as Listed;
+    expect(listed.threads.map((t) => t.subject)).toEqual(["Re: Quarterly Report Q3"]);
+    const opened = (await (
+      await request(mountApp(threadsRoutes, owner), "GET", `/${THREAD}`)
+    ).json()) as { thread: { subject: string } };
+    expect(opened.thread.subject).toBe("Re: Quarterly Report Q3");
   });
 });

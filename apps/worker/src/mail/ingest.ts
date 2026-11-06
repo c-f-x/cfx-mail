@@ -235,7 +235,7 @@ async function store(
 
   // Unread badge only moves for inbound mail that arrives unseen.
   const unreadDelta = opts.direction === "in" && !(opts.flags & Flag.SEEN) ? 1 : 0;
-  const bump = threadBumpValues(at, participants, unreadDelta, !!opts.live);
+  const bump = threadBumpValues(at, participants, unreadDelta, !!opts.live, parsed.subject ?? "");
 
   const insertMessage = db.insert(message).values({
     id: messageId,

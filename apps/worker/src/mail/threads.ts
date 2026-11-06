@@ -1,14 +1,10 @@
 import type { DB } from "@cfx-mail/db";
 import { message, thread } from "@cfx-mail/db/schema";
 import { Flag } from "@cfx-mail/shared/flags";
+import { normalizeSubject, REPLY_PREFIX } from "@cfx-mail/shared/subject";
 import { and, count, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import type { SQLiteUpdateSetSource } from "drizzle-orm/sqlite-core";
 import { chunk, SQL_VARS_LIMIT } from "../lib/sql.ts";
-import { normalizeSubject } from "./mime.ts";
-
-// Same prefixes normalizeSubject strips — used to tell a reply ("Re: X") from a
-// bare first-contact message whose subject merely happens to collide.
-const REPLY_PREFIX = /^\s*(?:(?:re|fwd?|aw|wg)\s*:\s*)+/i;
 
 const SUBJECT_WINDOW_SECONDS = 60 * 60 * 24 * 7;
 // In-Reply-To/References are attacker-controlled, so a header match into an
@@ -310,8 +306,9 @@ export async function bumpThread(
   newParticipants: { name?: string; address: string }[],
   unreadDelta: number,
   untrash = false,
+  subject = "",
 ): Promise<void> {
-  const values = threadBumpValues(at, newParticipants, unreadDelta, untrash);
+  const values = threadBumpValues(at, newParticipants, unreadDelta, untrash, subject);
   await db.update(thread).set(values).where(eq(thread.id, threadId));
 }
 
@@ -333,6 +330,10 @@ export function threadBumpValues(
   // conversation would stay buried in Trash. Off for historical import, which
   // must not resurrect previously-trashed threads on re-import.
   untrash = false,
+  // The new message's subject. A conversation that started without a subject
+  // takes the first one a later message brings, so it stops listing as
+  // "(no subject)". One that already has a subject keeps it.
+  subject = "",
 ): SQLiteUpdateSetSource<typeof thread> {
   const seen = new Set<string>();
   const incoming = newParticipants.filter((p) => {
@@ -343,6 +344,7 @@ export function threadBumpValues(
   });
   const added = sql.param(incoming, thread.participants);
   const when = sql.param(at, thread.lastMsgAt);
+  const norm = normalizeSubject(subject);
   return {
     // A thread row is created stamped with the current time. Its first message
     // sets the real time, which for an import lies in the past; after that the
@@ -369,5 +371,10 @@ export function threadBumpValues(
         }
       : {}),
     ...(untrash ? { trashed: false, trashedAt: null } : {}),
+    ...(norm
+      ? {
+          subjectNorm: sql`case when ${thread.subjectNorm} = '' then ${norm} else ${thread.subjectNorm} end`,
+        }
+      : {}),
   };
 }

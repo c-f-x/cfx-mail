@@ -1,3 +1,4 @@
+import type { MailView } from "@cfx-mail/shared";
 import { Flag, hasFlag } from "@cfx-mail/shared/flags";
 
 // Which messages of a conversation open expanded, and which fold away.
@@ -17,15 +18,33 @@ export interface InitialOpen {
   focus: string | undefined;
 }
 
+// The message a conversation is "about" from the list it was opened in: from
+// Sent, your latest message; from a received list, the latest one you
+// received, so a conversation you replied to opens on their mail, not your
+// reply. Lists that hold both (All, Marked, Trash) take the newest.
+function anchorOf(messages: FoldableMessage[], view: MailView): FoldableMessage | undefined {
+  const anchor =
+    view === "sent"
+      ? messages.findLast((m) => m.direction === "out")
+      : view === "inbox" || view === "spam"
+        ? messages.findLast((m) => m.direction === "in")
+        : undefined;
+  return anchor ?? messages.at(-1);
+}
+
 // A linked message (a search hit) opens alone. Otherwise every unread message
-// opens, and the newest one always does.
-export function initialOpen(messages: FoldableMessage[], focusId?: string): InitialOpen {
+// opens, and so does the anchor.
+export function initialOpen(
+  messages: FoldableMessage[],
+  view: MailView,
+  focusId?: string,
+): InitialOpen {
   const target = focusId ? messages.find((m) => m.id === focusId) : undefined;
+  const anchor = anchorOf(messages, view);
   const open = target
     ? [target]
     : messages.filter(
-        (m, i) =>
-          i === messages.length - 1 || (m.direction === "in" && !hasFlag(m.flags, Flag.SEEN)),
+        (m) => m === anchor || (m.direction === "in" && !hasFlag(m.flags, Flag.SEEN)),
       );
   return {
     ids: new Set(messages.map((m) => m.id)),

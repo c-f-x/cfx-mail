@@ -1,7 +1,16 @@
 import { Flag, hasFlag } from "@cfx-mail/shared/flags";
 import type { AttachmentDto } from "@cfx-mail/shared/responses";
 import { useQuery } from "@tanstack/react-query";
-import { Download, Ellipsis, FileText, Image, Paperclip, ShieldCheck, Star } from "lucide-react";
+import {
+  Download,
+  Ellipsis,
+  FileText,
+  Image,
+  Paperclip,
+  Send,
+  ShieldCheck,
+  Star,
+} from "lucide-react";
 import { useState } from "react";
 import { CodeBanner } from "@/components/code-banner.tsx";
 import { EmailFrame } from "@/components/email-frame.tsx";
@@ -123,15 +132,30 @@ export function messageTime(msg: MessageRow): Date {
   return new Date(msg.sentAt ?? msg.receivedAt ?? msg.createdAt);
 }
 
+// Your own messages carry an accent edge, so who said what reads at a glance.
+const OUT_EDGE = "border-l-2 border-l-primary/60";
+
 // A folded message: one line of who, what and when. Clicking opens it.
-export function CollapsedMessage({ msg, onExpand }: { msg: MessageRow; onExpand: () => void }) {
+export function CollapsedMessage({
+  msg,
+  showSubject,
+  onExpand,
+}: {
+  msg: MessageRow;
+  showSubject?: boolean;
+  onExpand: () => void;
+}) {
   const fmt = useDateTimeFmt();
-  const unread = msg.direction === "in" && !hasFlag(msg.flags, Flag.SEEN);
+  const out = msg.direction === "out";
+  const unread = !out && !hasFlag(msg.flags, Flag.SEEN);
   const when = messageTime(msg);
   return (
     <article
       data-message-id={msg.id}
-      className="overflow-hidden rounded-lg border bg-card shadow-black/[0.02] shadow-sm"
+      className={cn(
+        "overflow-hidden rounded-lg border bg-card shadow-black/[0.02] shadow-sm",
+        out && OUT_EDGE,
+      )}
     >
       <button
         type="button"
@@ -141,13 +165,23 @@ export function CollapsedMessage({ msg, onExpand }: { msg: MessageRow; onExpand:
         <SenderAvatar name={msg.fromName ?? undefined} address={msg.fromAddr} size={24} />
         <span
           className={cn(
-            "w-40 shrink-0 truncate text-[13px]",
+            "flex w-44 shrink-0 items-center gap-1.5 text-[13px]",
             unread ? "font-semibold" : "font-medium",
           )}
         >
-          {msg.direction === "out" ? "You" : (msg.fromName ?? msg.fromAddr)}
+          {out && <Send className="size-3 shrink-0 text-primary" aria-label="Sent" />}
+          <span className="truncate">
+            {out ? "You" : (msg.fromName ?? msg.fromAddr)}
+            {out && msg.toAddrs[0] && (
+              <span className="font-normal text-muted-foreground">
+                {" "}
+                to {msg.toAddrs[0].name ?? msg.toAddrs[0].address}
+              </span>
+            )}
+          </span>
         </span>
         <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">
+          {showSubject && <span className="font-medium text-foreground">{msg.subject} · </span>}
           {stripQuotedSnippet(msg.snippet)}
         </span>
         {hasFlag(msg.flags, Flag.STARRED) && (
@@ -188,6 +222,7 @@ export function MessageCard({
   msg,
   readOnly,
   highlight,
+  showSubject,
   onCollapse,
   onTrash,
   onRestore,
@@ -200,6 +235,8 @@ export function MessageCard({
   readOnly: boolean;
   /** The message a link pointed at (a search hit). */
   highlight?: boolean;
+  /** The reply changed the conversation's subject: show it like a new email's. */
+  showSubject?: boolean;
   /** Folds the card back to a one-line summary; clicking the header calls it. */
   onCollapse?: () => void;
   onTrash?: () => void;
@@ -241,6 +278,7 @@ export function MessageCard({
       data-message-id={msg.id}
       className={cn(
         "overflow-hidden rounded-lg border bg-card shadow-black/[0.02] shadow-sm",
+        msg.direction === "out" && OUT_EDGE,
         highlight && "ring-2 ring-primary/40",
       )}
     >
@@ -262,6 +300,12 @@ export function MessageCard({
                 &lt;{msg.fromAddr}&gt;
               </span>
             </span>
+            {msg.direction === "out" && (
+              <Badge variant="outline" className="shrink-0 gap-1 px-1.5 text-[11px] text-primary">
+                <Send className="size-3" aria-hidden />
+                Sent
+              </Badge>
+            )}
           </div>
           <div className="space-y-0.5 text-[11px] text-muted-foreground">
             {/* On a phone the address and date move under the name, out of the crowded row. */}
@@ -329,6 +373,11 @@ export function MessageCard({
           </div>
         </div>
       </header>
+      {showSubject && (
+        <h2 className="border-b px-4 py-2 font-semibold text-[14px] tracking-tight">
+          {msg.subject}
+        </h2>
+      )}
       <SpamBanner msg={msg} />
       {senderBanners && (
         <CodeBanner

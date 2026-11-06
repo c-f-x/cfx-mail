@@ -39,7 +39,7 @@ import {
 import { keys } from "@/lib/query-keys.ts";
 import { foldedRun, initialOpen } from "@/lib/thread-fold.ts";
 import { useThreadListMutation } from "@/lib/thread-mutations.ts";
-import { threadSubject } from "@/lib/thread-subject.ts";
+import { changesSubject, threadSubject } from "@/lib/thread-subject.ts";
 import { useListNavigation } from "@/lib/use-list-navigation.ts";
 import { openCompose } from "./compose-dock.tsx";
 import { LabelsMenu } from "./labels-menu.tsx";
@@ -253,7 +253,7 @@ export function MessageView({
   // Which messages open expanded (lib/thread-fold.ts). Taken once when the
   // conversation opens (the view is keyed per thread), so marking them read
   // doesn't fold them away. Mail that arrives while it is open opens expanded.
-  const [initial] = useState(() => initialOpen(visibleMessages, focusMessageId));
+  const [initial] = useState(() => initialOpen(visibleMessages, view, focusMessageId));
   const [overrides, setOverrides] = useState<Map<string, boolean>>(() => new Map());
   const [unfolded, setUnfolded] = useState(false);
   const isOpen = (m: MessageRow) =>
@@ -491,13 +491,21 @@ export function MessageView({
                 );
               }
               if (!isOpen(m))
-                return <CollapsedMessage key={m.id} msg={m} onExpand={() => setOpen(m.id, true)} />;
+                return (
+                  <CollapsedMessage
+                    key={m.id}
+                    msg={m}
+                    showSubject={changesSubject(m, i, thread)}
+                    onExpand={() => setOpen(m.id, true)}
+                  />
+                );
               return (
                 <MessageCard
                   key={m.id}
                   msg={m}
                   readOnly={readOnly}
                   highlight={m.id === focusMessageId}
+                  showSubject={changesSubject(m, i, thread)}
                   onCollapse={visibleMessages.length > 1 ? () => setOpen(m.id, false) : undefined}
                   busy={setMsg.isPending || delMsg.isPending}
                   threadSpam={thread.spam}

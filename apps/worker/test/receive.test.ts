@@ -1057,6 +1057,37 @@ describe("handleInbound — a conversation only its participants can extend", ()
     expect(original.spam).toBe(false);
     expect(original.msgCount).toBe(2);
   });
+
+  it("names a conversation that started without a subject after the first reply that has one", async () => {
+    await deliver(
+      ALICE,
+      eml({ from: ALICE, auth: PASS, subject: "", headers: [`Message-ID: ${INVOICE_ID}`] }),
+    );
+    const started = (
+      await db.query.thread.findMany({ where: eq(thread.mailboxId, MAILBOX_ID) })
+    )[0]!;
+    expect(started.subjectNorm).toBe("");
+
+    for (const [id, subject] of [
+      ["<reply-1@partner.test>", "Re: Invoice 4411"],
+      ["<reply-2@partner.test>", "Re: Something else"],
+    ] as const) {
+      // eslint-disable-next-line no-await-in-loop -- replies arrive one after the other
+      await deliver(
+        ALICE,
+        eml({
+          from: ALICE,
+          auth: PASS,
+          subject,
+          headers: [`Message-ID: ${id}`, `In-Reply-To: ${INVOICE_ID}`],
+        }),
+      );
+    }
+
+    const named = (await threadOf(started.id))!;
+    expect(named.msgCount).toBe(3);
+    expect(named.subjectNorm).toBe("invoice 4411");
+  });
 });
 
 describe("handleInbound — Spamhaus DQS", () => {

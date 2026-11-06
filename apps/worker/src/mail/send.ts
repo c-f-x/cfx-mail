@@ -311,6 +311,7 @@ export async function sendFromMailbox(
       [{ name: fromName, address: fromAddr }, ...allRecipients],
       0,
       true,
+      input.subject,
     ),
     userId
       ? broadcastToUsers(env, [userId], {

@@ -243,7 +243,7 @@ export function threadsRoutes() {
       const keyByEmail = new Map(keyRows.map((k) => [k.email, k]));
 
       return c.json({
-        thread: serializeThread(th, msgs[0]?.subject ?? null),
+        thread: serializeThread(th, msgs.find((m) => m.subject.trim())?.subject ?? null),
         messages: msgs.map((m) => {
           const k = m.direction === "in" ? keyByEmail.get(m.fromAddr.toLowerCase()) : undefined;
           return serializeMessage(
