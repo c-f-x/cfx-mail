@@ -1086,7 +1086,42 @@ describe("handleInbound — a conversation only its participants can extend", ()
 
     const named = (await threadOf(started.id))!;
     expect(named.msgCount).toBe(3);
+    expect(named.subject).toBe("Re: Invoice 4411");
     expect(named.subjectNorm).toBe("invoice 4411");
+  });
+
+  it("stores a new conversation's subject as written", async () => {
+    const invoice = await seedInvoice();
+    expect((await threadOf(invoice))!.subject).toBe("Invoice 4411");
+  });
+
+  it("marks an out-of-office reply, which joins the conversation but never names it", async () => {
+    await deliver(
+      ALICE,
+      eml({ from: ALICE, auth: PASS, subject: "", headers: [`Message-ID: ${INVOICE_ID}`] }),
+    );
+    await deliver(
+      ALICE,
+      eml({
+        from: ALICE,
+        auth: PASS,
+        subject: "Automatic reply: Invoice 4411",
+        headers: [
+          `Message-ID: <ooo@partner.test>`,
+          `In-Reply-To: ${INVOICE_ID}`,
+          "Auto-Submitted: auto-replied",
+        ],
+      }),
+    );
+
+    const ooo = await messageFrom(ALICE, "Automatic reply: Invoice 4411");
+    expect(ooo.autoReply).toBe(true);
+    const th = (await threadOf(ooo.threadId))!;
+    expect(th.msgCount).toBe(2);
+    expect(th.subject).toBe("");
+    expect(th.subjectNorm).toBe("");
+    const first = await messageFrom(ALICE, "");
+    expect(first.autoReply).toBe(false);
   });
 });
 

@@ -21,7 +21,7 @@ import {
 } from "../permissions.ts";
 import { bodiesEtag, etagMatches, REVALIDATE, renderBodies } from "./message-body.ts";
 import { cursorBefore, decodeCursor, nextCursor, pageLimit } from "./pagination.ts";
-import { firstMessageSubject, serializeMessage, serializeThread } from "./serialize.ts";
+import { serializeMessage, serializeThread } from "./serialize.ts";
 import { zValidator } from "./validate.ts";
 
 export function threadsRoutes() {
@@ -63,25 +63,15 @@ export function threadsRoutes() {
       );
       // Keyset order must be deterministic: tie-break equal timestamps on id so
       // the cursor never straddles or repeats a row across pages.
-      const order = [desc(thread.lastMsgAt), desc(thread.id)];
-      // The page is chosen first, so the subject is looked up for its rows only.
-      const page = db
-        .select({ id: thread.id })
+      const rows = await db
+        .select()
         .from(thread)
         .where(where)
-        .orderBy(...order)
+        .orderBy(desc(thread.lastMsgAt), desc(thread.id))
         .limit(limit);
-      const rows = await db
-        .select({ thread, subject: firstMessageSubject })
-        .from(thread)
-        .where(inArray(thread.id, page))
-        .orderBy(...order);
       return c.json({
-        threads: rows.map((row) => serializeThread(row.thread, row.subject)),
-        nextCursor: nextCursor(rows, limit, (row) => ({
-          ts: row.thread.lastMsgAt,
-          id: row.thread.id,
-        })),
+        threads: rows.map((row) => serializeThread(row)),
+        nextCursor: nextCursor(rows, limit, (row) => ({ ts: row.lastMsgAt, id: row.id })),
       });
     })
 
@@ -243,7 +233,7 @@ export function threadsRoutes() {
       const keyByEmail = new Map(keyRows.map((k) => [k.email, k]));
 
       return c.json({
-        thread: serializeThread(th, msgs.find((m) => m.subject.trim())?.subject ?? null),
+        thread: serializeThread(th),
         messages: msgs.map((m) => {
           const k = m.direction === "in" ? keyByEmail.get(m.fromAddr.toLowerCase()) : undefined;
           return serializeMessage(

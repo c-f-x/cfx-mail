@@ -7,6 +7,8 @@ interface FoldableMessage {
   id: string;
   direction: "in" | "out";
   flags: number;
+  /** An out-of-office responder wrote it, not a person. */
+  autoReply: boolean;
 }
 
 export interface InitialOpen {
@@ -21,19 +23,22 @@ export interface InitialOpen {
 // The message a conversation is "about" from the list it was opened in: from
 // Sent, your latest message; from a received list, the latest one you
 // received, so a conversation you replied to opens on their mail, not your
-// reply. Lists that hold both (All, Marked, Trash) take the newest.
+// reply. Lists that hold both (All, Marked, Trash) take the newest. An
+// out-of-office reply is never what a conversation is about.
 function anchorOf(messages: FoldableMessage[], view: MailView): FoldableMessage | undefined {
+  const people = messages.filter((m) => !m.autoReply);
   const anchor =
     view === "sent"
-      ? messages.findLast((m) => m.direction === "out")
+      ? people.findLast((m) => m.direction === "out")
       : view === "inbox" || view === "spam"
-        ? messages.findLast((m) => m.direction === "in")
-        : undefined;
+        ? people.findLast((m) => m.direction === "in")
+        : people.at(-1);
   return anchor ?? messages.at(-1);
 }
 
 // A linked message (a search hit) opens alone. Otherwise every unread message
-// opens, and so does the anchor.
+// opens, and so does the anchor. Out-of-office replies stay folded unless they
+// are all there is.
 export function initialOpen(
   messages: FoldableMessage[],
   view: MailView,
@@ -44,13 +49,21 @@ export function initialOpen(
   const open = target
     ? [target]
     : messages.filter(
-        (m) => m === anchor || (m.direction === "in" && !hasFlag(m.flags, Flag.SEEN)),
+        (m) =>
+          m === anchor || (m.direction === "in" && !m.autoReply && !hasFlag(m.flags, Flag.SEEN)),
       );
   return {
     ids: new Set(messages.map((m) => m.id)),
     open: new Set(open.map((m) => m.id)),
     focus: open[0]?.id,
   };
+}
+
+// Whether a message opens expanded, before the reader opens or folds it. Mail
+// that arrives while the conversation is open opens expanded, unless an
+// out-of-office responder wrote it.
+export function opensExpanded(initial: InitialOpen, message: FoldableMessage): boolean {
+  return initial.open.has(message.id) || (!initial.ids.has(message.id) && !message.autoReply);
 }
 
 // Folded rows between the first message and the one just before the first

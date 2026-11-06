@@ -6,29 +6,16 @@ import type {
   ReminderDto,
   ThreadDto,
 } from "@cfx-mail/shared";
-import { sql } from "drizzle-orm";
 
 // Map Drizzle rows (with real `Date` columns) to the wire shape `c.json()`
 // emits. The return types are the canonical DTOs, so any schema change that
 // breaks a response shape fails typecheck right here.
 
-// The subject of a thread's first message that has one, as a column of a
-// query over `thread`, so a conversation that started without a subject takes
-// the first one a reply brings. "First" is the order the thread route returns
-// its messages in, so a list row and the reading pane's heading show the same
-// line. Written out by hand: Drizzle leaves column names unqualified in a
-// one-table query, and an unqualified `id` inside the subquery would name the
-// message's id.
-export const firstMessageSubject = sql<string | null>`(SELECT m.subject FROM message m
-  WHERE m.thread_id = "thread"."id" AND trim(m.subject) <> ''
-  ORDER BY coalesce(m.sent_at, m.received_at, m.created_at), m.created_at LIMIT 1)`;
-
-export function serializeThread(r: typeof thread.$inferSelect, subject: string | null): ThreadDto {
+export function serializeThread(r: typeof thread.$inferSelect): ThreadDto {
   // The list id only steers threading on the server.
   const { listId: _listId, ...rest } = r;
   return {
     ...rest,
-    subject: subject ?? "",
     lastMsgAt: rest.lastMsgAt.toISOString(),
     trashedAt: rest.trashedAt?.toISOString() ?? null,
   };
@@ -60,6 +47,7 @@ export function serializeMessage(
     spamReasons: r.spamReasons,
     spamAuth: r.spamAuth,
     listUnsubscribe: r.listUnsubscribe,
+    autoReply: r.autoReply,
     otpCode: r.otpCode,
     otpOrigin: r.otpOrigin,
     pgpEncrypted: r.pgpEncrypted,

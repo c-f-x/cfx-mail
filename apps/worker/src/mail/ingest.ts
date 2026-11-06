@@ -12,6 +12,7 @@ import {
   bodyForIndex,
   extractListId,
   extractUnsubscribe,
+  isAutoReply,
   type ParsedEmail,
   parseMime,
   snippet,
@@ -194,9 +195,11 @@ async function store(
   const references = parsed.references ? splitMessageIds(parsed.references) : null;
   const inReplyTo = parsed.inReplyTo ? (splitMessageIds(parsed.inReplyTo)[0] ?? null) : null;
   const at = opts.receivedAt ?? opts.sentAt ?? new Date();
+  const autoReply = opts.direction === "in" && isAutoReply(parsed);
   const { threadId, joinedByHeader, created } = await resolveThreadId(db, {
     mailboxId,
     subject: parsed.subject ?? "",
+    autoReply,
     inReplyTo,
     references,
     participants,
@@ -235,7 +238,14 @@ async function store(
 
   // Unread badge only moves for inbound mail that arrives unseen.
   const unreadDelta = opts.direction === "in" && !(opts.flags & Flag.SEEN) ? 1 : 0;
-  const bump = threadBumpValues(at, participants, unreadDelta, !!opts.live, parsed.subject ?? "");
+  // An out-of-office reply joins its thread but never names it.
+  const bump = threadBumpValues(
+    at,
+    participants,
+    unreadDelta,
+    !!opts.live,
+    autoReply ? "" : (parsed.subject ?? ""),
+  );
 
   const insertMessage = db.insert(message).values({
     id: messageId,
@@ -252,6 +262,7 @@ async function store(
     ccAddrs: ccAddrs.length ? ccAddrs : null,
     bccAddrs: null,
     subject: parsed.subject ?? "",
+    autoReply,
     snippet: snippet(bodyIndex),
     bodyText: bodyIndex,
     toText: addrsToText([...toAddrs, ...ccAddrs]),

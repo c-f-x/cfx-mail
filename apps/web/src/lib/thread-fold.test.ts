@@ -1,10 +1,17 @@
 import { Flag } from "@cfx-mail/shared/flags";
 import { describe, expect, it } from "vitest";
-import { foldedRun, initialOpen } from "./thread-fold.ts";
+import { foldedRun, initialOpen, opensExpanded } from "./thread-fold.ts";
 
-const read = (id: string) => ({ id, direction: "in" as const, flags: Flag.SEEN });
-const unread = (id: string) => ({ id, direction: "in" as const, flags: 0 });
-const sent = (id: string) => ({ id, direction: "out" as const, flags: 0 });
+const msg = (id: string, direction: "in" | "out", flags: number, autoReply = false) => ({
+  id,
+  direction,
+  flags,
+  autoReply,
+});
+const read = (id: string) => msg(id, "in", Flag.SEEN);
+const unread = (id: string) => msg(id, "in", 0);
+const sent = (id: string) => msg(id, "out", 0);
+const outOfOffice = (id: string) => msg(id, "in", 0, true);
 
 describe("initialOpen", () => {
   it("folds read messages and opens the newest", () => {
@@ -62,6 +69,32 @@ describe("initialOpen, by the list the conversation was opened from", () => {
 
   it("falls back to the newest when the list's side has no message", () => {
     expect([...initialOpen([sent("a"), sent("b")], "inbox").open]).toEqual(["b"]);
+  });
+});
+
+describe("out-of-office replies", () => {
+  it("never decide where a conversation opens", () => {
+    const thread = [read("a"), sent("b"), outOfOffice("c")];
+    expect([...initialOpen(thread, "inbox").open]).toEqual(["a"]);
+    expect([...initialOpen(thread, "all").open]).toEqual(["b"]);
+  });
+
+  it("stay folded while unread", () => {
+    expect([...initialOpen([unread("a"), outOfOffice("b"), read("c")], "inbox").open]).toEqual([
+      "a",
+      "c",
+    ]);
+  });
+
+  it("open when they are all there is", () => {
+    expect([...initialOpen([outOfOffice("a")], "inbox").open]).toEqual(["a"]);
+  });
+
+  it("stay folded when one arrives while the conversation is open", () => {
+    const initial = initialOpen([read("a")], "inbox");
+    expect(opensExpanded(initial, read("a"))).toBe(true);
+    expect(opensExpanded(initial, unread("new"))).toBe(true);
+    expect(opensExpanded(initial, outOfOffice("ooo"))).toBe(false);
   });
 });
 

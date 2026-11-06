@@ -13,6 +13,7 @@ import {
   type ThreadRow,
   threadQuery,
 } from "@/lib/queries.ts";
+import { counterpart, useOwnAddresses } from "@/lib/thread-label.ts";
 import { threadSubject } from "@/lib/thread-subject.ts";
 import { formatStamp } from "@/lib/time.ts";
 import { useSwipeRow } from "@/lib/use-swipe-row.ts";
@@ -84,7 +85,7 @@ export function ThreadRowView({
   const { prefs } = useUserPrefs();
   const fmt = useDateTimeFmt();
   const compact = prefs.density === "compact";
-  const firstParticipant = thread.participants[0];
+  const firstParticipant = counterpart(thread.participants, useOwnAddresses());
   const label = firstParticipant?.name ?? firstParticipant?.address ?? "(unknown)";
   const unread = thread.unreadCount > 0;
 

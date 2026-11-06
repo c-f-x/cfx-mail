@@ -37,7 +37,7 @@ import {
   type ThreadRow,
 } from "@/lib/queries.ts";
 import { keys } from "@/lib/query-keys.ts";
-import { foldedRun, initialOpen } from "@/lib/thread-fold.ts";
+import { foldedRun, initialOpen, opensExpanded } from "@/lib/thread-fold.ts";
 import { useThreadListMutation } from "@/lib/thread-mutations.ts";
 import { changesSubject, threadSubject } from "@/lib/thread-subject.ts";
 import { useListNavigation } from "@/lib/use-list-navigation.ts";
@@ -252,12 +252,11 @@ export function MessageView({
 
   // Which messages open expanded (lib/thread-fold.ts). Taken once when the
   // conversation opens (the view is keyed per thread), so marking them read
-  // doesn't fold them away. Mail that arrives while it is open opens expanded.
+  // doesn't fold them away.
   const [initial] = useState(() => initialOpen(visibleMessages, view, focusMessageId));
   const [overrides, setOverrides] = useState<Map<string, boolean>>(() => new Map());
   const [unfolded, setUnfolded] = useState(false);
-  const isOpen = (m: MessageRow) =>
-    overrides.get(m.id) ?? (initial.open.has(m.id) || !initial.ids.has(m.id));
+  const isOpen = (m: MessageRow) => overrides.get(m.id) ?? opensExpanded(initial, m);
   const setOpen = (id: string, open: boolean) =>
     setOverrides((prev) => new Map(prev).set(id, open));
   const allOpen = visibleMessages.every(isOpen);

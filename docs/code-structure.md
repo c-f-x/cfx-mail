@@ -63,7 +63,7 @@ The repository is a pnpm workspace (`pnpm-workspace.yaml`) with two apps and two
 | `src/responses.ts` | Response types (DTOs) derived from the schema. |
 | `src/events.ts` | `HubEvent`, the live-update event union. |
 | `src/permissions.ts`, `src/flags.ts` | `Perm` and `MailboxKind` bits, message `Flag` bits. |
-| `src/subject.ts` | Reply prefixes and `normalizeSubject`, so threading and the web app compare subjects the same way. |
+| `src/subject.ts` | How subjects are compared and shown: reply prefixes, `normalizeSubject` (the matching key), `displaySubject` (without "Re:" and "Fwd:") and the out-of-office subject prefixes. Threading and the web app share it. |
 
 ## `scripts`
 

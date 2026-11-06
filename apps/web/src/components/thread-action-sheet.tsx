@@ -8,6 +8,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { MailView, ThreadRow } from "@/lib/queries.ts";
+import { counterpart, useOwnAddresses } from "@/lib/thread-label.ts";
 import { threadSubject } from "@/lib/thread-subject.ts";
 import { Sheet, SheetContent } from "./ui/sheet.tsx";
 
@@ -81,7 +82,7 @@ export function ThreadActionSheet({
   }
 
   const title = threadSubject(thread);
-  const from = thread.participants[0];
+  const from = counterpart(thread.participants, useOwnAddresses());
   const sender = from?.name ?? from?.address ?? "";
 
   return (

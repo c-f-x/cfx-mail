@@ -69,6 +69,7 @@ describe("resolveThreadId", () => {
     await db.insert(thread).values({
       id: threadId,
       mailboxId: MAILBOX_ID,
+      subject: opts.subject ?? "Hello",
       subjectNorm: (opts.subject ?? "Hello").toLowerCase(),
       lastMsgAt: opts.lastMsgAt ?? new Date(),
       msgCount: 1,
@@ -86,14 +87,18 @@ describe("resolveThreadId", () => {
     return threadId;
   }
 
-  const subjectOf = async (id: string) =>
-    (await db.query.thread.findFirst({ where: eq(thread.id, id) }))?.subjectNorm;
+  const subjectOf = async (id: string) => {
+    const th = await db.query.thread.findFirst({ where: eq(thread.id, id) });
+    return th && `${th.subject}|${th.subjectNorm}`;
+  };
 
   // Delivery finds the thread, then stores the message with the thread update
-  // that carries the message's subject (ingest.ts, send.ts).
+  // that carries the message's subject, none for an out-of-office reply
+  // (ingest.ts, send.ts).
   async function deliverWithSubject(input: Parameters<typeof resolveThreadId>[1]): Promise<string> {
     const { threadId } = await resolveThreadId(db, input);
-    await bumpThread(db, threadId, new Date(), input.participants, 0, false, input.subject);
+    const subject = input.autoReply ? "" : input.subject;
+    await bumpThread(db, threadId, new Date(), input.participants, 0, false, subject);
     return threadId;
   }
 
@@ -107,10 +112,23 @@ describe("resolveThreadId", () => {
       fromAddr: "x@example.com",
     };
     expect(await deliverWithSubject(reply)).toBe(threadId);
-    expect(await subjectOf(threadId)).toBe("lunch plans");
+    expect(await subjectOf(threadId)).toBe("Re: Lunch plans|lunch plans");
 
     await deliverWithSubject({ ...reply, subject: "Re: Something else" });
-    expect(await subjectOf(threadId)).toBe("lunch plans");
+    expect(await subjectOf(threadId)).toBe("Re: Lunch plans|lunch plans");
+  });
+
+  it("an out-of-office reply never names a thread", async () => {
+    const threadId = await seedThread({ from: "x@example.com", subject: "" });
+    await deliverWithSubject({
+      mailboxId: MAILBOX_ID,
+      subject: "Réponse automatique\u00a0: Wohnung Düdingen",
+      autoReply: true,
+      inReplyTo: "<parent@example.com>",
+      participants: [{ address: "x@example.com" }],
+      fromAddr: "x@example.com",
+    });
+    expect(await subjectOf(threadId)).toBe("|");
   });
 
   it("a reply with a different subject does not rename a thread that has one", async () => {
@@ -122,7 +140,7 @@ describe("resolveThreadId", () => {
       participants: [{ address: "x@example.com" }],
       fromAddr: "x@example.com",
     });
-    expect(await subjectOf(threadId)).toBe("hello");
+    expect(await subjectOf(threadId)).toBe("Hello|hello");
   });
 
   it("reuses an existing thread when a known participant replies to a stored ancestor", async () => {

@@ -364,6 +364,7 @@ describe("thread detail", () => {
     expect(body.messages).toHaveLength(1);
     expect(Object.keys(body.messages[0]!).toSorted()).toEqual(
       [
+        "autoReply",
         "bccAddrs",
         "ccAddrs",
         "createdAt",
@@ -433,15 +434,8 @@ describe("thread detail", () => {
         createdAt: at(10),
       });
     const res = await request(asOwner(), "GET", `/${threadId}`);
-    const body = (await res.json()) as {
-      thread: { subject: string };
-      messages: { id: string }[];
-    };
+    const body = (await res.json()) as { messages: { id: string }[] };
     expect(body.messages.map((m) => m.id)).toEqual(["m-imported", messageId]);
-    expect(body.thread.subject).toBe("Plans");
-    const list = await request(asOwner(), "GET", `/?mailboxId=${MAILBOX_ID}`);
-    const listed = (await list.json()) as { threads: { subject: string }[] };
-    expect(listed.threads.map((t) => t.subject)).toEqual(["Plans"]);
   });
 
   it("404s a missing thread", async () => {

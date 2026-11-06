@@ -1,15 +1,15 @@
 import { folder, message, thread, threadFolder } from "@cfx-mail/db/schema";
-import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { foldersRoutes } from "../../src/api/folders.ts";
 import { threadsRoutes } from "../../src/api/threads.ts";
 import { applyMigrationsOnce, db, mountApp, request, resetDb } from "../support/app.ts";
 import { MAILBOX_ID, OWNER_ID, owner, seedBase } from "../support/seed.ts";
 
-// A thread stores only its normalised subject ("quarterly report"), which is
-// for matching replies, not for showing. Lists show the subject of the
-// thread's first message as it was sent, the same line the reading pane uses
-// as its heading.
+// A thread stores its subject as people wrote it (`subject`) beside the
+// lowercased key that matches replies (`subjectNorm`). Lists and the reading
+// pane show the stored subject, the same line in both places. Delivery sets it
+// (test/threads.test.ts, test/receive.test.ts); migration 0051 filled it in for
+// older threads (test/subject-backfill.test.ts).
 
 const THREAD = "th-subject";
 
@@ -19,6 +19,7 @@ async function seedConversation(): Promise<void> {
   await db().insert(thread).values({
     id: THREAD,
     mailboxId: MAILBOX_ID,
+    subject: "Quarterly Report Q3",
     subjectNorm: "quarterly report q3",
     msgCount: 3,
   });
@@ -54,7 +55,7 @@ beforeEach(async () => {
 });
 
 describe("thread subject", () => {
-  it("lists a thread under its first message's subject, as sent", async () => {
+  it("lists a thread under its stored subject, as written", async () => {
     const lists = await Promise.all(
       [MAILBOX_ID, "all"].map(async (scope) => {
         const res = await request(mountApp(threadsRoutes, owner), "GET", `/?mailboxId=${scope}`);
@@ -121,15 +122,36 @@ describe("thread subject", () => {
     expect(body.messages[0]!.subject).toBe(body.thread.subject);
   });
 
-  it("names a thread that started without a subject after the first reply that has one", async () => {
-    await db().update(message).set({ subject: " " }).where(eq(message.id, "m-1"));
+  it("shows the subject the thread took, not its first message's", async () => {
+    // A conversation that started without a subject, named by a later reply.
+    await db()
+      .insert(thread)
+      .values({
+        id: "th-named-late",
+        mailboxId: MAILBOX_ID,
+        subject: "Re: Lunch plans",
+        subjectNorm: "lunch plans",
+        lastMsgAt: at(30),
+      });
+    await db().insert(message).values({
+      id: "m-blank",
+      mailboxId: MAILBOX_ID,
+      threadId: "th-named-late",
+      direction: "in",
+      fromAddr: "sender@elsewhere.test",
+      subject: "",
+      snippet: "",
+    });
     const listed = (await (
       await request(mountApp(threadsRoutes, owner), "GET", `/?mailboxId=${MAILBOX_ID}`)
     ).json()) as Listed;
-    expect(listed.threads.map((t) => t.subject)).toEqual(["Re: Quarterly Report Q3"]);
+    expect(listed.threads.map((t) => [t.id, t.subject])).toContainEqual([
+      "th-named-late",
+      "Re: Lunch plans",
+    ]);
     const opened = (await (
-      await request(mountApp(threadsRoutes, owner), "GET", `/${THREAD}`)
+      await request(mountApp(threadsRoutes, owner), "GET", "/th-named-late")
     ).json()) as { thread: { subject: string } };
-    expect(opened.thread.subject).toBe("Re: Quarterly Report Q3");
+    expect(opened.thread.subject).toBe("Re: Lunch plans");
   });
 });
