@@ -411,6 +411,39 @@ describe("thread detail", () => {
     });
   });
 
+  it("orders messages by the time they show, not the order they were stored", async () => {
+    const { threadId, messageId } = await seedMsgThread(db(), { direction: "in" });
+    const at = (minute: number) => new Date(Date.UTC(2026, 8, 1, 9, minute));
+    // An imported old message is stored after a newer reply that arrived first.
+    await db()
+      .update(message)
+      .set({ subject: "Re: Plans", receivedAt: at(5), createdAt: at(5) })
+      .where(eq(message.id, messageId));
+    await db()
+      .insert(message)
+      .values({
+        id: "m-imported",
+        mailboxId: MAILBOX_ID,
+        threadId,
+        direction: "in",
+        fromAddr: "sender@elsewhere.test",
+        subject: "Plans",
+        snippet: "",
+        sentAt: at(1),
+        createdAt: at(10),
+      });
+    const res = await request(asOwner(), "GET", `/${threadId}`);
+    const body = (await res.json()) as {
+      thread: { subject: string };
+      messages: { id: string }[];
+    };
+    expect(body.messages.map((m) => m.id)).toEqual(["m-imported", messageId]);
+    expect(body.thread.subject).toBe("Plans");
+    const list = await request(asOwner(), "GET", `/?mailboxId=${MAILBOX_ID}`);
+    const listed = (await list.json()) as { threads: { subject: string }[] };
+    expect(listed.threads.map((t) => t.subject)).toEqual(["Plans"]);
+  });
+
   it("404s a missing thread", async () => {
     const res = await request(asOwner(), "GET", "/nope");
     expect(res.status).toBe(404);

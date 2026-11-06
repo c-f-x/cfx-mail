@@ -207,11 +207,12 @@ Failure behaviour: any throw before step 8 completes is logged once as `inbound_
 
 ### 5.4 Reading a thread
 
-1. The SPA loads `GET /api/threads/:id` (READ checked by `requireEntityAccess`).
-2. It loads the bodies of the messages on screen with `GET /api/threads/:id/bodies?ids=…`, at most 50 per request (`api/threads.ts`; the web app gathers them in `lib/body-batcher.ts`). Only messages of that thread are served. The composer's quoted message uses `GET /api/messages/:id/body` (`api/messages.ts`). Both routes render through `api/message-body.ts`: the server reads `plainR2Key` or `rawR2Key` from R2 and parses it.
-3. For HTML it removes known tracking pixels (`mail/trackers.ts`), rewrites remote images to signed `/api/messages/proxy-image` URLs (`mail/img-proxy.ts`, HMAC with the auth secret), rewrites `cid:` images to the attachment route, and strips script-capable tags and `javascript:` URLs (`mail/sanitize.ts`). The response is revalidated by ETag on every use, so a browser cache never serves it after access ends.
-4. The browser sanitises again with DOMPurify (`apps/web/src/lib/sanitize-email.ts`) and renders the result in a sandboxed iframe without `allow-scripts` and with its own content policy (`apps/web/src/components/email-frame.tsx`).
-5. The image proxy accepts only URLs it signed, re-checks every redirect against the SSRF guard (`ssrf.ts`), allows images only, caps size at 10 MiB, times out after 5 seconds, and is limited to 300 requests per user per minute.
+1. The SPA loads `GET /api/threads/:id` (READ checked by `requireEntityAccess`). Messages come in the order they show: by their sent time, else their received time, else when they were stored, so imported mail reads in conversation order.
+2. The conversation opens with read messages folded to one line each, and a long run of them behind one "N more messages" divider (`apps/web/src/lib/thread-fold.ts`). Unread messages and the newest open expanded; a search hit opens its own message alone (`?msg=` on the thread route). A reply's quoted history folds behind a "…" button (`apps/web/src/lib/split-quote.ts`); forwards stay whole.
+3. It loads the bodies of the expanded messages with `GET /api/threads/:id/bodies?ids=…`, at most 50 per request (`api/threads.ts`; the web app gathers them in `lib/body-batcher.ts`). Only messages of that thread are served. The composer's quoted message uses `GET /api/messages/:id/body` (`api/messages.ts`). Both routes render through `api/message-body.ts`: the server reads `plainR2Key` or `rawR2Key` from R2 and parses it.
+4. For HTML it removes known tracking pixels (`mail/trackers.ts`), rewrites remote images to signed `/api/messages/proxy-image` URLs (`mail/img-proxy.ts`, HMAC with the auth secret), rewrites `cid:` images to the attachment route, and strips script-capable tags and `javascript:` URLs (`mail/sanitize.ts`). The response is revalidated by ETag on every use, so a browser cache never serves it after access ends.
+5. The browser sanitises again with DOMPurify (`apps/web/src/lib/sanitize-email.ts`) and renders the result in a sandboxed iframe without `allow-scripts` and with its own content policy (`apps/web/src/components/email-frame.tsx`).
+6. The image proxy accepts only URLs it signed, re-checks every redirect against the SSRF guard (`ssrf.ts`), allows images only, caps size at 10 MiB, times out after 5 seconds, and is limited to 300 requests per user per minute.
 
 ### 5.5 Live updates
 

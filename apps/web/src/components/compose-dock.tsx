@@ -304,11 +304,10 @@ export function ComposeForm({
     })();
   }
 
-  // Guard against the classic "forgot the attachment". Only the body the user
-  // actually composed is scanned — the quoted reply/forward original lives
-  // server-side and never reaches here, so it can't trip a false warning.
+  // Last checks before mail leaves (compose/send-guards.ts).
   async function passesSendGuards(): Promise<boolean> {
     const guards = sendGuards({
+      subject,
       composed: body.composedText,
       attachments: attachments.length,
       uploading,

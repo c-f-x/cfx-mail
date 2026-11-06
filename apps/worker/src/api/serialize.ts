@@ -18,7 +18,8 @@ import { sql } from "drizzle-orm";
 // hand: Drizzle leaves column names unqualified in a one-table query, and an
 // unqualified `id` inside the subquery would name the message's id.
 export const firstMessageSubject = sql<string | null>`(SELECT m.subject FROM message m
-  WHERE m.thread_id = "thread"."id" ORDER BY m.created_at LIMIT 1)`;
+  WHERE m.thread_id = "thread"."id"
+  ORDER BY coalesce(m.sent_at, m.received_at, m.created_at), m.created_at LIMIT 1)`;
 
 export function serializeThread(r: typeof thread.$inferSelect, subject: string | null): ThreadDto {
   // The list id only steers threading on the server.

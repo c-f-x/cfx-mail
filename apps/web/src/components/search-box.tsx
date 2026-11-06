@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { ALL_MAILBOXES } from "@/lib/accounts.ts";
 import { cn } from "@/lib/cn.ts";
 import { useDateTimeFmt } from "@/lib/prefs.ts";
-import { mailboxesQuery, type SearchResult, searchQuery } from "@/lib/queries.ts";
+import { mailboxesQuery, type SearchResult, searchHitView, searchQuery } from "@/lib/queries.ts";
 import { type DateTimeFmt, formatStamp } from "@/lib/time.ts";
 import { Button } from "./ui/button.tsx";
 import { Kbd } from "./ui/kbd.tsx";
@@ -63,7 +63,7 @@ export function SearchBox({ scope }: { scope: string }) {
       to: "/app/m/$mailboxId/t/$threadId",
       // Stay in All accounts when searching from there.
       params: { mailboxId: account ? result.mailboxId : ALL_MAILBOXES, threadId: result.threadId },
-      search: { view: "inbox" },
+      search: { view: searchHitView(result), msg: result.messageId },
     });
   }
 

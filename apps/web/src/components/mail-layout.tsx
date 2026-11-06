@@ -140,11 +140,14 @@ export function ThreadPane({
   scope,
   view,
   unread,
+  focusMessageId,
 }: {
   threadId: string;
   scope: ListScope;
   view?: MailView;
   unread?: boolean;
+  /** Open the conversation at this message (a search hit). */
+  focusMessageId?: string;
 }) {
   const thread = useQuery(threadQuery(threadId));
   const state = loadView({
@@ -155,12 +158,16 @@ export function ThreadPane({
   });
   if (thread.data)
     return (
+      // Keyed so each conversation, and each message link into it, opens with
+      // its own folding and scroll position.
       <MessageView
+        key={`${threadId}:${focusMessageId ?? ""}`}
         thread={thread.data.thread}
         messages={thread.data.messages}
         scope={scope}
         view={view}
         unread={unread}
+        focusMessageId={focusMessageId}
       />
     );
   if (state === "error")

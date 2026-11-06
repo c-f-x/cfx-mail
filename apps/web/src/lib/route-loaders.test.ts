@@ -50,3 +50,17 @@ describe("mail route loaders", () => {
     expect(fetch).toHaveBeenCalled();
   });
 });
+
+describe("a conversation link", () => {
+  // biome-ignore lint/suspicious/noExplicitAny: the router's own search type
+  const validate = MailboxThreadRoute.options.validateSearch as (s: any) => unknown;
+
+  it("keeps the message a search hit points at", () => {
+    expect(validate({ msg: "m-7" })).toEqual({ msg: "m-7" });
+  });
+
+  it("drops an empty or malformed message id", () => {
+    expect(validate({ msg: "" })).toEqual({});
+    expect(validate({ msg: 7 })).toEqual({});
+  });
+});
