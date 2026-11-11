@@ -1,7 +1,7 @@
-import type { DB } from "@cfmail/db";
-import type { RuleCondition } from "@cfmail/db/schema";
-import { rule } from "@cfmail/db/schema";
-import { compileRuleRegex } from "@cfmail/shared/schemas";
+import type { DB } from "@cfx-mail/db";
+import type { RuleCondition } from "@cfx-mail/db/schema";
+import { rule } from "@cfx-mail/db/schema";
+import { compileRuleRegex } from "@cfx-mail/shared/schemas";
 import { and, asc, eq } from "drizzle-orm";
 
 // Caps that keep matching on the inbound hot path bounded — the Workers runtime

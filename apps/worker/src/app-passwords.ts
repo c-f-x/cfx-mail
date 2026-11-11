@@ -4,9 +4,9 @@
 // (Better Auth's hasher, same as account passwords) is stored.
 /* eslint-disable no-await-in-loop -- candidate hashes are verified one at a time on purpose */
 
-import type { DB } from "@cfmail/db";
-import { appPassword, domain, mailbox, user } from "@cfmail/db/schema";
-import { has, Perm } from "@cfmail/shared/permissions";
+import type { DB } from "@cfx-mail/db";
+import { appPassword, domain, mailbox, user } from "@cfx-mail/db/schema";
+import { has, Perm } from "@cfx-mail/shared/permissions";
 import { hashPassword, verifyPassword } from "better-auth/crypto";
 import { and, eq, or } from "drizzle-orm";
 import { AppError } from "./errors.ts";

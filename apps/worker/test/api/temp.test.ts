@@ -1,5 +1,5 @@
-import { domain, domainGrant, mailbox } from "@cfmail/db/schema";
-import { MailboxKind } from "@cfmail/shared/permissions";
+import { domain, domainGrant, mailbox } from "@cfx-mail/db/schema";
+import { MailboxKind } from "@cfx-mail/shared/permissions";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { tempRoutes } from "../../src/api/temp.ts";

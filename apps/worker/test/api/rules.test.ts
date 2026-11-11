@@ -1,5 +1,5 @@
-import { label, rule } from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
+import { label, rule } from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { rulesRoutes } from "../../src/api/rules.ts";

@@ -1,5 +1,5 @@
-import type { DB } from "@cfmail/db";
-import { appPassword, mailbox, mailboxMember } from "@cfmail/db/schema";
+import type { DB } from "@cfx-mail/db";
+import { appPassword, mailbox, mailboxMember } from "@cfx-mail/db/schema";
 import { and, eq } from "drizzle-orm";
 
 // Give a mailbox a new owner. The owner holds every right without a member

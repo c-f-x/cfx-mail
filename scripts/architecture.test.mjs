@@ -75,13 +75,13 @@ function workerDirectionViolations(sources) {
   return found;
 }
 
-// docs/code-structure.md, "Between packages". Which @cfmail packages each may import.
+// docs/code-structure.md, "Between packages". Which @cfx-mail packages each may import.
 const PACKAGE_RULES = [
   { dir: "packages/db/src", may: [] },
-  { dir: "packages/shared/src", may: ["@cfmail/db"] },
-  { dir: "apps/worker/src", may: ["@cfmail/db", "@cfmail/shared"] },
+  { dir: "packages/shared/src", may: ["@cfx-mail/db"] },
+  { dir: "apps/worker/src", may: ["@cfx-mail/db", "@cfx-mail/shared"] },
   // The web app reads the Worker's route types, type-only; it runs no Worker code.
-  { dir: "apps/web/src", may: ["@cfmail/shared"], typeOnly: ["@cfmail/worker"] },
+  { dir: "apps/web/src", may: ["@cfx-mail/shared"], typeOnly: ["@cfx-mail/worker"] },
 ];
 
 const packageOf = (spec) => spec.split("/").slice(0, 2).join("/");
@@ -90,7 +90,7 @@ function packageViolations(rule, sources) {
   const found = [];
   for (const { file, text } of sources) {
     for (const { spec, typeOnly } of importsOf(text)) {
-      if (!spec.startsWith("@cfmail/")) continue;
+      if (!spec.startsWith("@cfx-mail/")) continue;
       const pkg = packageOf(spec);
       if (rule.may.includes(pkg)) continue;
       if (typeOnly && rule.typeOnly?.includes(pkg)) continue;
@@ -139,7 +139,7 @@ test("the import scan sees the shapes the code uses", () => {
   const text = [
     'import { a } from "./a.ts";',
     'import type { B } from "../b.ts";',
-    'import {\n  c,\n  type D,\n} from "@cfmail/shared/x";',
+    'import {\n  c,\n  type D,\n} from "@cfx-mail/shared/x";',
     'export { e } from "./e.ts";',
     'import "./side-effect.ts";',
     'const f = await import("./f.ts");',
@@ -147,7 +147,7 @@ test("the import scan sees the shapes the code uses", () => {
   assert.deepEqual(importsOf(text), [
     { spec: "./a.ts", typeOnly: false },
     { spec: "../b.ts", typeOnly: true },
-    { spec: "@cfmail/shared/x", typeOnly: false },
+    { spec: "@cfx-mail/shared/x", typeOnly: false },
     { spec: "./e.ts", typeOnly: false },
     { spec: "./side-effect.ts", typeOnly: false },
     { spec: "./f.ts", typeOnly: false },

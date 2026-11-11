@@ -1,4 +1,4 @@
-import { Flag, hasFlag } from "@cfmail/shared/flags";
+import { Flag, hasFlag } from "@cfx-mail/shared/flags";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { toast } from "sonner";

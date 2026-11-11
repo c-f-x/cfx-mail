@@ -1,5 +1,5 @@
-import type { DB } from "@cfmail/db";
-import { rateLimitCounter } from "@cfmail/db/schema";
+import type { DB } from "@cfx-mail/db";
+import { rateLimitCounter } from "@cfx-mail/db/schema";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "../src/errors.ts";

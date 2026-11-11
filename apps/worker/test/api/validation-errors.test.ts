@@ -1,4 +1,4 @@
-import { mailbox } from "@cfmail/db/schema";
+import { mailbox } from "@cfx-mail/db/schema";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApi } from "../../src/api/index.ts";
 import { applyMigrationsOnce, db, resetDb } from "../support/app.ts";

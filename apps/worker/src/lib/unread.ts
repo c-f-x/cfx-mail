@@ -1,5 +1,5 @@
-import { message, thread } from "@cfmail/db/schema";
-import { Flag } from "@cfmail/shared";
+import { message, thread } from "@cfx-mail/db/schema";
+import { Flag } from "@cfx-mail/shared";
 import { sql } from "drizzle-orm";
 
 // Recounts a thread's unread inbound messages in SQL, to refresh the cached

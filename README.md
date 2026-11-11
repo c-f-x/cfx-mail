@@ -59,8 +59,8 @@ The full procedure, with every command, is in `AGENTS.md`, section 4. It is writ
 
 ```bash
 npx -y pnpm@12.4.1 install
-npx -y pnpm@12.4.1 --filter @cfmail/db migrate:local
-npx -y pnpm@12.4.1 --filter @cfmail/web build
+npx -y pnpm@12.4.1 --filter @cfx-mail/db migrate:local
+npx -y pnpm@12.4.1 --filter @cfx-mail/web build
 cd apps/worker && node_modules/.bin/wrangler dev --local
 ```
 

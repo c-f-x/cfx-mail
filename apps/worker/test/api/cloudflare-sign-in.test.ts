@@ -1,4 +1,4 @@
-import { account, session, user } from "@cfmail/db/schema";
+import { account, session, user } from "@cfx-mail/db/schema";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApi } from "../../src/api/index.ts";

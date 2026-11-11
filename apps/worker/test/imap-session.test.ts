@@ -1,7 +1,7 @@
 /* eslint-disable no-await-in-loop -- protocol conversations are sequential */
-import { appPassword, message, thread, threadFolder } from "@cfmail/db/schema";
-import { Flag } from "@cfmail/shared/flags";
-import { Perm } from "@cfmail/shared/permissions";
+import { appPassword, message, thread, threadFolder } from "@cfx-mail/db/schema";
+import { Flag } from "@cfx-mail/shared/flags";
+import { Perm } from "@cfx-mail/shared/permissions";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { hashAppPassword } from "../src/app-passwords.ts";

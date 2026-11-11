@@ -1,4 +1,4 @@
-import { MailboxKind } from "@cfmail/shared/permissions";
+import { MailboxKind } from "@cfx-mail/shared/permissions";
 import { describe, expect, it } from "vitest";
 import { formMailboxKinds } from "./mailbox-kinds.ts";
 

@@ -1,5 +1,5 @@
 // Ambient stand-ins for Cloudflare Workers runtime types referenced by
-// @cfmail/worker sources. The web app imports the worker's route schema
+// @cfx-mail/worker sources. The web app imports the worker's route schema
 // type-only (`hc<AppType>` — see lib/api.ts), which pulls worker sources into
 // this package's type program. The worker's own typecheck uses the real
 // `@cloudflare/workers-types`; here the names only need to resolve — the web

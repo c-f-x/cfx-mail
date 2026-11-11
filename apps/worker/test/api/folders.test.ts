@@ -1,4 +1,4 @@
-import { Perm } from "@cfmail/shared/permissions";
+import { Perm } from "@cfx-mail/shared/permissions";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { foldersRoutes } from "../../src/api/folders.ts";
 import { applyMigrationsOnce, db, mountApp, request, resetDb } from "../support/app.ts";

@@ -1,6 +1,6 @@
-import { makeDB } from "@cfmail/db";
-import { domain, mailbox, message, thread } from "@cfmail/db/schema";
-import type { SendMessageInput } from "@cfmail/shared/schemas";
+import { makeDB } from "@cfx-mail/db";
+import { domain, mailbox, message, thread } from "@cfx-mail/db/schema";
+import type { SendMessageInput } from "@cfx-mail/shared/schemas";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApi } from "../../src/api/index.ts";

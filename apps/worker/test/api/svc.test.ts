@@ -1,5 +1,5 @@
-import type { ServiceMode } from "@cfmail/db/enums";
-import { mailbox, message, rateLimitCounter } from "@cfmail/db/schema";
+import type { ServiceMode } from "@cfx-mail/db/enums";
+import { mailbox, message, rateLimitCounter } from "@cfx-mail/db/schema";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { svcRoutes } from "../../src/api/svc.ts";

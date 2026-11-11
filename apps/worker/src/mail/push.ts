@@ -1,5 +1,5 @@
-import type { DB } from "@cfmail/db";
-import { mailboxNotify, pushSubscription } from "@cfmail/db/schema";
+import type { DB } from "@cfx-mail/db";
+import { mailboxNotify, pushSubscription } from "@cfx-mail/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { getConfig, setConfig } from "../config.ts";
 import { bytesToB64url } from "../lib/encoding.ts";

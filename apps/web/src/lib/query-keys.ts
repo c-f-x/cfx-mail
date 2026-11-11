@@ -1,4 +1,4 @@
-import type { MailView } from "@cfmail/shared";
+import type { MailView } from "@cfx-mail/shared";
 
 // Central registry of React Query keys. Importing these instead of writing
 // `["threads", mailboxId]` inline keeps invalidation and reads in lockstep —

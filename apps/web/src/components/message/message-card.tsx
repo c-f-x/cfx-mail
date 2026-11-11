@@ -1,5 +1,5 @@
-import { Flag, hasFlag } from "@cfmail/shared/flags";
-import type { AttachmentDto } from "@cfmail/shared/responses";
+import { Flag, hasFlag } from "@cfx-mail/shared/flags";
+import type { AttachmentDto } from "@cfx-mail/shared/responses";
 import { useQuery } from "@tanstack/react-query";
 import { Download, FileText, Image, Paperclip, ShieldCheck, Star } from "lucide-react";
 import { useState } from "react";

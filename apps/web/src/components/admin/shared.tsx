@@ -1,4 +1,4 @@
-import { MailboxKind } from "@cfmail/shared/permissions";
+import { MailboxKind } from "@cfx-mail/shared/permissions";
 import { useId } from "react";
 import { Checkbox } from "@/components/ui/checkbox.tsx";
 import {

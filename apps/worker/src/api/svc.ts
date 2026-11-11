@@ -1,5 +1,5 @@
-import { attachment, domain, mailbox, message } from "@cfmail/db/schema";
-import { serviceSend } from "@cfmail/shared/schemas";
+import { attachment, domain, mailbox, message } from "@cfx-mail/db/schema";
+import { serviceSend } from "@cfx-mail/shared/schemas";
 import { and, asc, desc, eq, gt, or } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";

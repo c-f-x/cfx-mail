@@ -1,4 +1,4 @@
-import type { DB } from "@cfmail/db";
+import type { DB } from "@cfx-mail/db";
 import {
   appPassword,
   contactKey,
@@ -9,16 +9,16 @@ import {
   thread,
   threadFolder,
   user,
-} from "@cfmail/db/schema";
-import { Flag } from "@cfmail/shared/flags";
-import { grant, Perm } from "@cfmail/shared/permissions";
+} from "@cfx-mail/db/schema";
+import { Flag } from "@cfx-mail/shared/flags";
+import { grant, Perm } from "@cfx-mail/shared/permissions";
 import type {
   ContactKeysDto,
   MailboxListDto,
   MailboxMembersDto,
   MailboxSettingsDto,
   PgpKeyResultDto,
-} from "@cfmail/shared/responses";
+} from "@cfx-mail/shared/responses";
 import {
   addContactKey,
   createMailbox,
@@ -28,7 +28,7 @@ import {
   TEMP_TTL_DEFAULT_SECONDS,
   updateMailboxSettings,
   verifyContactKey,
-} from "@cfmail/shared/schemas";
+} from "@cfx-mail/shared/schemas";
 import { and, count, eq, gt, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";

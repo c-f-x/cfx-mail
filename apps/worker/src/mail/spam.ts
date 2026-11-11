@@ -1,4 +1,4 @@
-import type { DB } from "@cfmail/db";
+import type { DB } from "@cfx-mail/db";
 import { stripTags } from "../lib/html-strip.ts";
 import {
   type DomainListing,

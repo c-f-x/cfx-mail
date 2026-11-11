@@ -14,8 +14,8 @@
 // clock, which only advances at I/O and has 1 ms steps.
 /* eslint-disable no-await-in-loop -- deliveries and ticks are timed one after another */
 import { applyD1Migrations, env } from "cloudflare:test";
-import { makeDB } from "@cfmail/db";
-import { domain, mailbox, user } from "@cfmail/db/schema";
+import { makeDB } from "@cfx-mail/db";
+import { domain, mailbox, user } from "@cfx-mail/db/schema";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { runCron } from "../src/cron.ts";
 import type { Env } from "../src/env.ts";

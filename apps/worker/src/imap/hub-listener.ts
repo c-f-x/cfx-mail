@@ -4,7 +4,7 @@
 // one that arrives while nobody is waiting still wakes the next `wait()`.
 /* eslint-disable no-await-in-loop -- one SSE stream, read frame by frame */
 
-import type { HubEvent } from "@cfmail/shared/events";
+import type { HubEvent } from "@cfx-mail/shared/events";
 import type { Env } from "../env.ts";
 
 export class HubListener {

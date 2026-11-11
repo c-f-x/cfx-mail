@@ -1,6 +1,6 @@
 import { EmailMessage } from "cloudflare:email";
-import type { DB } from "@cfmail/db";
-import { mailbox, ruleSendLog } from "@cfmail/db/schema";
+import type { DB } from "@cfx-mail/db";
+import { mailbox, ruleSendLog } from "@cfx-mail/db/schema";
 import { and, count, eq, gt } from "drizzle-orm";
 import type { Env } from "../env.ts";
 import { escapeHtml } from "../lib/encoding.ts";

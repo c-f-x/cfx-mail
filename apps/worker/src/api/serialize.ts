@@ -1,11 +1,11 @@
-import type { draft, message, reminder, thread } from "@cfmail/db/schema";
+import type { draft, message, reminder, thread } from "@cfx-mail/db/schema";
 import type {
   DraftDto,
   MessageDto,
   MessagePgpKeyDto,
   ReminderDto,
   ThreadDto,
-} from "@cfmail/shared";
+} from "@cfx-mail/shared";
 import { sql } from "drizzle-orm";
 
 // Map Drizzle rows (with real `Date` columns) to the wire shape `c.json()`

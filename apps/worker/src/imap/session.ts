@@ -8,8 +8,8 @@
 // IDLE wake-ups, and after this session's own mutations.
 /* eslint-disable no-await-in-loop -- responses must be written in protocol order */
 
-import type { DB } from "@cfmail/db";
-import { Flag } from "@cfmail/shared/flags";
+import type { DB } from "@cfx-mail/db";
+import { Flag } from "@cfx-mail/shared/flags";
 import { loginWithAppPassword } from "../app-passwords.ts";
 import type { Env } from "../env.ts";
 import { AppError } from "../errors.ts";

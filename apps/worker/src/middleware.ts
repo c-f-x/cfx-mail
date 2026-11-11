@@ -1,4 +1,4 @@
-import { user } from "@cfmail/db/schema";
+import { user } from "@cfx-mail/db/schema";
 import { eq } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { authFromCtx } from "./auth-ctx.ts";

@@ -1,6 +1,6 @@
-import { attachment, mailbox, message, rateLimitCounter, thread } from "@cfmail/db/schema";
-import { Flag } from "@cfmail/shared/flags";
-import { Perm } from "@cfmail/shared/permissions";
+import { attachment, mailbox, message, rateLimitCounter, thread } from "@cfx-mail/db/schema";
+import { Flag } from "@cfx-mail/shared/flags";
+import { Perm } from "@cfx-mail/shared/permissions";
 import { eq } from "drizzle-orm";
 import type { Hono } from "hono";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";

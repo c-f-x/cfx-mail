@@ -1,4 +1,4 @@
-import { makeDB } from "@cfmail/db";
+import { makeDB } from "@cfx-mail/db";
 import type { Context } from "hono";
 import type { AppBindings } from "./env.ts";
 

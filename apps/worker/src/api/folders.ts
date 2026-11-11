@@ -1,7 +1,7 @@
-import { folder, thread, threadFolder } from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
-import type { FolderDto, FolderListDto, ThreadListDto } from "@cfmail/shared/responses";
-import { createFolder, fileThreads, updateFolder } from "@cfmail/shared/schemas";
+import { folder, thread, threadFolder } from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
+import type { FolderDto, FolderListDto, ThreadListDto } from "@cfx-mail/shared/responses";
+import { createFolder, fileThreads, updateFolder } from "@cfx-mail/shared/schemas";
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";

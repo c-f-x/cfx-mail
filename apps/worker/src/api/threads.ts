@@ -1,8 +1,8 @@
-import { contactKey, draft, message, thread, threadFolder } from "@cfmail/db/schema";
-import { Flag } from "@cfmail/shared/flags";
-import { Perm } from "@cfmail/shared/permissions";
-import type { FolderCountsResponseDto, ThreadBodiesDto } from "@cfmail/shared/responses";
-import { markAllRead, threadBodiesQuery, updateThread } from "@cfmail/shared/schemas";
+import { contactKey, draft, message, thread, threadFolder } from "@cfx-mail/db/schema";
+import { Flag } from "@cfx-mail/shared/flags";
+import { Perm } from "@cfx-mail/shared/permissions";
+import type { FolderCountsResponseDto, ThreadBodiesDto } from "@cfx-mail/shared/responses";
+import { markAllRead, threadBodiesQuery, updateThread } from "@cfx-mail/shared/schemas";
 import { and, asc, count, desc, eq, gt, inArray, or, type SQL, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";

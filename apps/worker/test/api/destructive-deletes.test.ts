@@ -8,7 +8,7 @@ import {
   session,
   thread,
   user,
-} from "@cfmail/db/schema";
+} from "@cfx-mail/db/schema";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApi } from "../../src/api/index.ts";

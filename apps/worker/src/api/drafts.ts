@@ -1,6 +1,6 @@
-import { draft } from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
-import { createDraft, scheduleDraft, updateDraft } from "@cfmail/shared/schemas";
+import { draft } from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
+import { createDraft, scheduleDraft, updateDraft } from "@cfx-mail/shared/schemas";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";

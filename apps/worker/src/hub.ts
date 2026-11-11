@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import type { HubEvent } from "@cfmail/shared/events";
+import type { HubEvent } from "@cfx-mail/shared/events";
 import type { Env } from "./env.ts";
 
 const PING_INTERVAL_MS = 25_000;

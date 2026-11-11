@@ -1,5 +1,5 @@
 import { applyD1Migrations, env } from "cloudflare:test";
-import { makeDB } from "@cfmail/db";
+import { makeDB } from "@cfx-mail/db";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { AppBindings, Env } from "../../src/env.ts";

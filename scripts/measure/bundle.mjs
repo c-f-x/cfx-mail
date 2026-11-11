@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Reports the size of the built web app and the Worker bundle, raw and gzip.
 // Build first:
-//   npx -y pnpm@12.4.1 --filter @cfmail/web build
+//   npx -y pnpm@12.4.1 --filter @cfx-mail/web build
 //   cd apps/worker && npx -y pnpm@12.4.1 exec wrangler deploy --dry-run \
 //     --outdir=/tmp/cfx-mail-worker-dist --metafile=/tmp/cfx-mail-worker-meta.json
 // Then, from the repo root:

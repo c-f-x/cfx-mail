@@ -1,5 +1,5 @@
-import { attachment, message, thread } from "@cfmail/db/schema";
-import { Flag } from "@cfmail/shared/flags";
+import { attachment, message, thread } from "@cfx-mail/db/schema";
+import { Flag } from "@cfx-mail/shared/flags";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { mailboxesRoutes } from "../../src/api/mailboxes.ts";

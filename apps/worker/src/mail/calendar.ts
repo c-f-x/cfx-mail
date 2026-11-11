@@ -1,4 +1,4 @@
-import type { CalendarEventDto } from "@cfmail/shared/responses";
+import type { CalendarEventDto } from "@cfx-mail/shared/responses";
 import type { ParsedEmail } from "./mime.ts";
 
 // Surface a calendar invite (RFC 5545 iCalendar) from a received message so the

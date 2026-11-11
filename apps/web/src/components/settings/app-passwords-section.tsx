@@ -1,4 +1,4 @@
-import type { AppPasswordCreatedDto } from "@cfmail/shared";
+import type { AppPasswordCreatedDto } from "@cfx-mail/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { useState } from "react";

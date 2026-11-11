@@ -192,7 +192,7 @@ importers:
       '@better-auth/passkey':
         specifier: 1.7.18
         version: 1.7.18(@better-auth/core@1.7.18(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.5(zod@4.6.7))(jose@6.2.12)(kysely@0.29.5)(nanostores@1.5.3))(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-auth@1.7.18(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@cloudflare/workers-types@5.20261108.1)(kysely@0.29.5))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.1.0(@types/node@26.6.6)(jsdom@31.0.0(@noble/hashes@2.4.0))(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13))))(better-call@1.4.5(zod@4.6.7))(nanostores@1.5.3)
-      '@cfmail/shared':
+      '@cfx-mail/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@fontsource-variable/inter':
@@ -253,7 +253,7 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
     devDependencies:
-      '@cfmail/worker':
+      '@cfx-mail/worker':
         specifier: workspace:*
         version: link:../worker
       '@rolldown/plugin-babel':
@@ -304,10 +304,10 @@ importers:
       '@better-auth/passkey':
         specifier: 1.7.18
         version: 1.7.18(@better-auth/core@1.7.18(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.5(zod@4.6.7))(jose@6.2.12)(kysely@0.29.5)(nanostores@1.5.3))(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-auth@1.7.18(drizzle-kit@0.31.10)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261108.1)(kysely@0.29.5))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.1.0(@types/node@26.6.6)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13))))(better-call@1.4.5(zod@4.6.7))(nanostores@1.5.3)
-      '@cfmail/db':
+      '@cfx-mail/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@cfmail/shared':
+      '@cfx-mail/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@hono/zod-validator':
@@ -372,7 +372,7 @@ importers:
 
   packages/shared:
     dependencies:
-      '@cfmail/db':
+      '@cfx-mail/db':
         specifier: workspace:*
         version: link:../db
       zod:

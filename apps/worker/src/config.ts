@@ -1,5 +1,5 @@
-import type { DB } from "@cfmail/db";
-import { systemConfig } from "@cfmail/db/schema";
+import type { DB } from "@cfx-mail/db";
+import { systemConfig } from "@cfx-mail/db/schema";
 import { eq } from "drizzle-orm";
 import type { Env } from "./env.ts";
 import { randomBase64 } from "./lib/encoding.ts";

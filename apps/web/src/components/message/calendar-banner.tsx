@@ -1,4 +1,4 @@
-import type { CalendarEventDto, UserPrefs } from "@cfmail/shared/responses";
+import type { CalendarEventDto, UserPrefs } from "@cfx-mail/shared/responses";
 import { CalendarClock, CalendarX2, MapPin, Repeat, Users, Video } from "lucide-react";
 import { cn } from "@/lib/cn.ts";
 import { useDateTimeFmt, useUserPrefs } from "@/lib/prefs.ts";

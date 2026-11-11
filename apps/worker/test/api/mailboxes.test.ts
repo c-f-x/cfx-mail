@@ -1,5 +1,5 @@
-import { appPassword, contactKey, domain, mailbox, mailboxMember } from "@cfmail/db/schema";
-import { MailboxKind, Perm } from "@cfmail/shared/permissions";
+import { appPassword, contactKey, domain, mailbox, mailboxMember } from "@cfx-mail/db/schema";
+import { MailboxKind, Perm } from "@cfx-mail/shared/permissions";
 import { and, eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { mailboxesRoutes } from "../../src/api/mailboxes.ts";

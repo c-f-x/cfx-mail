@@ -1,4 +1,4 @@
-import type { MessageBodyDto } from "@cfmail/shared/responses";
+import type { MessageBodyDto } from "@cfx-mail/shared/responses";
 import { useMutation } from "@tanstack/react-query";
 import {
   ArchiveRestore,

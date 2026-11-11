@@ -21,7 +21,7 @@ account="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.ar
 export CLOUDFLARE_ACCOUNT_ID="$account"
 
 cd "$root"
-node_modules/.bin/turbo run build --filter=@cfmail/web
+node_modules/.bin/turbo run build --filter=@cfx-mail/web
 
 cd "$root/apps/worker"
 wrangler="node_modules/.bin/wrangler"

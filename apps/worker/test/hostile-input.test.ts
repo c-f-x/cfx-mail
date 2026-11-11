@@ -3,7 +3,7 @@
 // unterminated opener. Differential cases pin the rewrites to the regexes they
 // replaced, so ordinary mail produces the same output as before.
 
-import type { DB } from "@cfmail/db";
+import type { DB } from "@cfx-mail/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   replaceBlockBreaks,

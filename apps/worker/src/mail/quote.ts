@@ -4,9 +4,9 @@
 // proxy paths, which would be dead links for the recipient). The HTML/text are
 // concatenated onto the composed body in `sendFromMailbox`.
 
-import type { DB } from "@cfmail/db";
-import { message } from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
+import type { DB } from "@cfx-mail/db";
+import { message } from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
 import { eq } from "drizzle-orm";
 import type { Env } from "../env.ts";
 import { escapeHtml } from "../lib/encoding.ts";

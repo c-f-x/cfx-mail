@@ -1,5 +1,5 @@
-import { attachment } from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
+import { attachment } from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { attachmentsRoutes } from "../../src/api/attachments.ts";
 import { applyMigrationsOnce, db, e, mountApp, request, resetDb } from "../support/app.ts";

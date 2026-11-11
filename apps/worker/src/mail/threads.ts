@@ -1,6 +1,6 @@
-import type { DB } from "@cfmail/db";
-import { message, thread } from "@cfmail/db/schema";
-import { Flag } from "@cfmail/shared/flags";
+import type { DB } from "@cfx-mail/db";
+import { message, thread } from "@cfx-mail/db/schema";
+import { Flag } from "@cfx-mail/shared/flags";
 import { and, count, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import type { SQLiteUpdateSetSource } from "drizzle-orm/sqlite-core";
 import { chunk, SQL_VARS_LIMIT } from "../lib/sql.ts";

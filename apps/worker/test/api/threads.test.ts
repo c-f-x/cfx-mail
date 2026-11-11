@@ -1,6 +1,6 @@
-import { attachment, folder, mailbox, message, thread, threadFolder } from "@cfmail/db/schema";
-import { Flag } from "@cfmail/shared/flags";
-import { Perm } from "@cfmail/shared/permissions";
+import { attachment, folder, mailbox, message, thread, threadFolder } from "@cfx-mail/db/schema";
+import { Flag } from "@cfx-mail/shared/flags";
+import { Perm } from "@cfx-mail/shared/permissions";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { threadsRoutes } from "../../src/api/threads.ts";

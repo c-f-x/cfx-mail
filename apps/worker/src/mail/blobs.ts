@@ -1,5 +1,5 @@
-import type { DB } from "@cfmail/db";
-import { attachment, message, thread } from "@cfmail/db/schema";
+import type { DB } from "@cfx-mail/db";
+import { attachment, message, thread } from "@cfx-mail/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import type { Env } from "../env.ts";
 import { chunk, SQL_VARS_LIMIT } from "../lib/sql.ts";

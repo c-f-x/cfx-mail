@@ -1,4 +1,4 @@
-import type { EmailTemplate } from "@cfmail/shared/responses";
+import type { EmailTemplate } from "@cfx-mail/shared/responses";
 import { BellPlus, Clock, FileText } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button.tsx";

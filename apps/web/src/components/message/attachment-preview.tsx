@@ -1,4 +1,4 @@
-import type { AttachmentDto } from "@cfmail/shared/responses";
+import type { AttachmentDto } from "@cfx-mail/shared/responses";
 import { ChevronLeft, ChevronRight, Download, ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 import { buttonVariants } from "@/components/ui/button.tsx";

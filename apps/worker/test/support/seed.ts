@@ -6,7 +6,7 @@ import {
   message,
   thread,
   user,
-} from "@cfmail/db/schema";
+} from "@cfx-mail/db/schema";
 import type { DB } from "./app.ts";
 
 // Stable ids so tests can reference seeded rows without threading return values.

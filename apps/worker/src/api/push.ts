@@ -1,6 +1,6 @@
-import { NOTIFY_LEVELS } from "@cfmail/db/enums";
-import { mailboxNotify, pushSubscription } from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
+import { NOTIFY_LEVELS } from "@cfx-mail/db/enums";
+import { mailboxNotify, pushSubscription } from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";

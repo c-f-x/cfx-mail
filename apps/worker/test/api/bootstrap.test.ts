@@ -1,4 +1,4 @@
-import { account, user } from "@cfmail/db/schema";
+import { account, user } from "@cfx-mail/db/schema";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { bootstrapRoutes, createUserWithPassword } from "../../src/api/bootstrap.ts";

@@ -1,4 +1,4 @@
-import { type DB, makeDB } from "@cfmail/db";
+import { type DB, makeDB } from "@cfx-mail/db";
 import {
   domain,
   draft,
@@ -10,8 +10,8 @@ import {
   thread,
   user,
   userInvite,
-} from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
+} from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
 import { and, asc, eq, isNotNull, isNull, lt, lte, notExists, or, sql } from "drizzle-orm";
 import { BAN_REASON_PENDING_DELETE } from "./auth.ts";
 import type { Env } from "./env.ts";

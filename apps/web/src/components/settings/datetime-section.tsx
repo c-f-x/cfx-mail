@@ -1,4 +1,4 @@
-import type { DateFormat, UserPrefs } from "@cfmail/shared";
+import type { DateFormat, UserPrefs } from "@cfx-mail/shared";
 import { fieldClass, Row, Section, Segmented } from "@/components/settings-ui.tsx";
 import { useDateTimeFmt, useUserPrefs } from "@/lib/prefs.ts";
 import { dateFormatExample, formatDateTime } from "@/lib/time.ts";

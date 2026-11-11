@@ -1,4 +1,4 @@
-import { folder, message, thread, threadFolder } from "@cfmail/db/schema";
+import { folder, message, thread, threadFolder } from "@cfx-mail/db/schema";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { foldersRoutes } from "../../src/api/folders.ts";
 import { threadsRoutes } from "../../src/api/threads.ts";

@@ -1,5 +1,5 @@
-import { type DB, makeDB } from "@cfmail/db";
-import type { PgpKeyEvent } from "@cfmail/db/enums";
+import { type DB, makeDB } from "@cfx-mail/db";
+import type { PgpKeyEvent } from "@cfx-mail/db/enums";
 import {
   contactKey,
   domain,
@@ -12,8 +12,8 @@ import {
   redirect,
   reminder,
   threadFolder,
-} from "@cfmail/db/schema";
-import { Flag } from "@cfmail/shared/flags";
+} from "@cfx-mail/db/schema";
+import { Flag } from "@cfx-mail/shared/flags";
 import { and, DrizzleQueryError, eq, inArray } from "drizzle-orm";
 import { getOrCreatePgpMasterKey } from "../config.ts";
 import type { Env } from "../env.ts";

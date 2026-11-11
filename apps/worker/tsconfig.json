@@ -4,10 +4,10 @@
     "lib": ["ES2023"],
     "types": ["@cloudflare/workers-types", "@cloudflare/vitest-plugin/types"],
     "paths": {
-      "@cfmail/shared": ["../../packages/shared/src/index.ts"],
-      "@cfmail/shared/*": ["../../packages/shared/src/*"],
-      "@cfmail/db": ["../../packages/db/src/index.ts"],
-      "@cfmail/db/*": ["../../packages/db/src/*"]
+      "@cfx-mail/shared": ["../../packages/shared/src/index.ts"],
+      "@cfx-mail/shared/*": ["../../packages/shared/src/*"],
+      "@cfx-mail/db": ["../../packages/db/src/index.ts"],
+      "@cfx-mail/db/*": ["../../packages/db/src/*"]
     }
   },
   "include": [
