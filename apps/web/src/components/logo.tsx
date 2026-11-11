@@ -9,7 +9,7 @@ export function Logo({ className }: { className?: string }) {
       viewBox="0 0 512 512"
       className={className}
       role="img"
-      aria-label="cfmail"
+      aria-label="cfx-mail"
       xmlns="http://www.w3.org/2000/svg"
     >
       <defs>

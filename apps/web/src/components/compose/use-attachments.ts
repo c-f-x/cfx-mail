@@ -136,7 +136,7 @@ export function useAttachments({ initial, embedInlineHtml }: Options) {
     // then embed them in the HTML body (promoting from plain text if needed).
     const ups = await Promise.all(
       prepared.map(async (f) => {
-        const contentId = `${crypto.randomUUID()}@cfmail`;
+        const contentId = `${crypto.randomUUID()}@cfx-mail`;
         const up = await uploadBlob(f, { inline: true, contentId });
         return up ? { up, contentId } : null;
       }),

@@ -129,7 +129,7 @@ export class ImapSession {
 
   async run(): Promise<void> {
     try {
-      await this.send(`* OK [CAPABILITY ${PRE_AUTH_CAPS.join(" ")}] cfmail IMAP4rev1 ready`);
+      await this.send(`* OK [CAPABILITY ${PRE_AUTH_CAPS.join(" ")}] cfx-mail IMAP4rev1 ready`);
       while (this.state !== "logout") {
         const cmd = await this.readNext();
         if (cmd === null) break;
@@ -263,12 +263,12 @@ export class ImapSession {
         await this.sync();
         return this.tagged(tag, "OK", `${name} completed`);
       case "LOGOUT":
-        await this.send("* BYE cfmail logging out");
+        await this.send("* BYE cfx-mail logging out");
         await this.tagged(tag, "OK", "LOGOUT completed");
         this.state = "logout";
         return;
       case "ID":
-        await this.send('* ID ("name" "cfmail" "vendor" "cloudflare-mail")');
+        await this.send('* ID ("name" "cfx-mail" "vendor" "cloudflare-mail")');
         return this.tagged(tag, "OK", "ID completed");
       case "STARTTLS":
         return this.tagged(

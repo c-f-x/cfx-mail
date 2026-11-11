@@ -13,13 +13,13 @@ const MODE_OPTIONS = [
 
 // Ask the browser to route system `mailto:` links here. Chrome/Firefox answer
 // with their own confirmation prompt; Safari has no API for it (the row hides).
-// Links clicked *inside* cfmail never need this — they're intercepted in-app.
+// Links clicked *inside* cfx-mail never need this — they're intercepted in-app.
 function registerMailtoHandler() {
   try {
     navigator.registerProtocolHandler("mailto", `${location.origin}/compose?mailto=%s`);
-    toast.success("Confirm the prompt to send mailto: links to cfmail");
+    toast.success("Confirm the prompt to send mailto: links to cfx-mail");
   } catch {
-    toast.error("Your browser wouldn't register cfmail as the mail handler");
+    toast.error("Your browser wouldn't register cfx-mail as the mail handler");
   }
 }
 
@@ -61,7 +61,7 @@ export function ComposeSection() {
         {"registerProtocolHandler" in navigator && (
           <Row
             label="Handle mailto: links"
-            hint="Open mailto: links from other apps and sites in cfmail."
+            hint="Open mailto: links from other apps and sites in cfx-mail."
           >
             <Button variant="outline" size="sm" onClick={registerMailtoHandler}>
               Set as default

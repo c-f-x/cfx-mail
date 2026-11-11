@@ -138,7 +138,7 @@ describe("buildPushRequest", () => {
       payload,
       ttl: 12 * 60 * 60,
       urgency: "high",
-      adminContact: "mailto:push@cfmail.invalid",
+      adminContact: "mailto:push@cfx-mail.invalid",
     });
 
     // Apple rejects the legacy "aesgcm" scheme — the encoding must be aes128gcm
@@ -169,7 +169,7 @@ describe("buildPushRequest", () => {
     expect(verified).toBe(true);
     const decoded = JSON.parse(new TextDecoder().decode(b64urlToBytes(claims!)));
     expect(decoded.aud).toBe("https://web.push.apple.com");
-    expect(decoded.sub).toBe("mailto:push@cfmail.invalid");
+    expect(decoded.sub).toBe("mailto:push@cfx-mail.invalid");
     expect(decoded.exp).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 24 * 60 * 60);
   });
 });

@@ -73,7 +73,7 @@ export async function buildQuote(
   if (ref.kind === "reply") {
     const intro = `On ${when}, ${from} wrote:`;
     const html =
-      `<div class="cfmail-quote">` +
+      `<div class="cfx-mail-quote">` +
       `<p style="margin:1em 0 8px;color:#6b7280;">${escapeHtml(intro)}</p>` +
       `<blockquote style="margin:0;padding-left:12px;border-left:2px solid #d1d5db;color:#4b5563;">${bodyHtml}</blockquote>` +
       `</div>`;
@@ -92,7 +92,7 @@ export async function buildQuote(
     cc ? `Cc: ${cc}` : null,
   ].filter((l): l is string => l !== null);
   const html =
-    `<div class="cfmail-forward">` +
+    `<div class="cfx-mail-forward">` +
     `<p style="margin:1em 0 8px;color:#6b7280;">${headerLines.map(escapeHtml).join("<br>")}</p>` +
     bodyHtml +
     `</div>`;

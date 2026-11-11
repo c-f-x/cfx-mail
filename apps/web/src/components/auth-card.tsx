@@ -12,7 +12,7 @@ export function CardShell({ title, children }: { title: string; children?: React
         <div className="mb-5 flex items-center gap-2.5">
           <Logo className="h-8 w-8 rounded-md shadow-black/[0.06] shadow-sm" />
           <div>
-            <div className="font-semibold text-[15px] leading-none tracking-tight">cfmail</div>
+            <div className="font-semibold text-[15px] leading-none tracking-tight">cfx-mail</div>
             <div className="mt-1 text-[11px] text-muted-foreground">mail on Cloudflare</div>
           </div>
         </div>
