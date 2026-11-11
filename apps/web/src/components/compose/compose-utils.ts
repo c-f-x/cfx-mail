@@ -16,7 +16,7 @@ export interface UploadedAttachment {
 
 // Marks an <img> in the rich editor as an inline attachment. The preview src
 // points at the draft blob; buildBody swaps it for `cid:<contentId>` on send.
-export const CID_ATTR = "data-cfmail-cid";
+export const CID_ATTR = "data-cfx-mail-cid";
 
 export function escapeAttr(value: string): string {
   return value

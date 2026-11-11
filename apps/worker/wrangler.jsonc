@@ -4,7 +4,7 @@
   // real deployment's values (account, Worker name, hostnames, database and
   // bucket ids) live in the private site file and are joined with this at
   // deploy time by scripts/site-config.mjs (decision D-16).
-  "name": "cfmail-local",
+  "name": "cfx-mail-local",
   "main": "src/index.ts",
   "compatibility_date": "2026-06-23",
   "compatibility_flags": ["nodejs_compat"],
@@ -37,7 +37,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "cfmail-local",
+      "database_name": "cfx-mail-local",
       "database_id": "local",
       "migrations_dir": "../../packages/db/drizzle"
     }
@@ -45,7 +45,7 @@
   "r2_buckets": [
     {
       "binding": "BLOBS",
-      "bucket_name": "cfmail-local-blobs"
+      "bucket_name": "cfx-mail-local-blobs"
     }
   ],
   "durable_objects": {

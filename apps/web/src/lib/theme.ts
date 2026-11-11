@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 export type Theme = "light" | "dark" | "system";
 
-const STORAGE_KEY = "cfmail-theme";
+const STORAGE_KEY = "cfx-mail-theme";
 
 function readStoredTheme(): Theme {
   if (typeof localStorage === "undefined") return "system";

@@ -14,7 +14,7 @@ The web app has no build-time configuration of its own (section 6).
 
 ## 1. `wrangler.jsonc`
 
-The file is a template. It describes local development and tests (`name: "cfmail-local"`, `database_id: "local"`) and names no real deployment. At deploy time `scripts/site-config.mjs` writes a joined copy into a scratch folder, with the deployment as a block under `env`. The block's values come from the private site file named by `CFX_SITE` ([`AGENTS.md`](../AGENTS.md), section 2; decision D-16).
+The file is a template. It describes local development and tests (`name: "cfx-mail-local"`, `database_id: "local"`) and names no real deployment. At deploy time `scripts/site-config.mjs` writes a joined copy into a scratch folder, with the deployment as a block under `env`. The block's values come from the private site file named by `CFX_SITE` ([`AGENTS.md`](../AGENTS.md), section 2; decision D-16).
 
 ### Bindings
 
@@ -22,8 +22,8 @@ The joined `env` block repeats these four, because Wrangler does not inherit the
 
 | Binding | Type | Top-level value | Read by | Required | If missing |
 |---|---|---|---|---|---|
-| `DB` | D1 database, with `migrations_dir: "../../packages/db/drizzle"` | `cfmail-local` | Every module through `makeDB` (`packages/db/src/index.ts`); `api/bootstrap.ts` uses it raw | Yes | Every API request, delivery and cron tick fails. |
-| `BLOBS` | R2 bucket | `cfmail-local-blobs` | `mail/ingest.ts`, `mail/send.ts`, `mail/blobs.ts`, `mail/quote.ts`, `api/messages.ts`, `api/attachments.ts`, `api/avatar.ts`, `api/drafts.ts`, `api/svc.ts`, `api/threads.ts`, `cron.ts`, `imap/store.ts` | Yes | No mail can be stored or opened. |
+| `DB` | D1 database, with `migrations_dir: "../../packages/db/drizzle"` | `cfx-mail-local` | Every module through `makeDB` (`packages/db/src/index.ts`); `api/bootstrap.ts` uses it raw | Yes | Every API request, delivery and cron tick fails. |
+| `BLOBS` | R2 bucket | `cfx-mail-local-blobs` | `mail/ingest.ts`, `mail/send.ts`, `mail/blobs.ts`, `mail/quote.ts`, `api/messages.ts`, `api/attachments.ts`, `api/avatar.ts`, `api/drafts.ts`, `api/svc.ts`, `api/threads.ts`, `cron.ts`, `imap/store.ts` | Yes | No mail can be stored or opened. |
 | `USER_HUB` | Durable Object namespace, class `UserHub` | `UserHub` | `hub.ts` (`broadcastToUsers`), `api/stream.ts`, `imap/hub-listener.ts` | Yes | Live updates stop. Broadcasts are best-effort, so mail still flows. |
 | `EMAIL` | `send_email`, `remote: true` | no allowed-address list | `mail/send.ts`, `mail/notify.ts`, `mail/rule-sends.ts`, `mail/unsubscribe.ts` | Yes | Sending answers 502 and rolls back; invites and resets are not sent. |
 | `ASSETS` | Static assets from `../web/dist` | | `index.ts` | Yes | The app does not load. |
@@ -45,7 +45,7 @@ These are set once at the top level and inherited by the joined `env` block.
 | `assets` | `directory: "../web/dist"`, `not_found_handling: "single-page-application"`, `run_worker_first: true` | Every request reaches the Worker, which serves the build through `env.ASSETS` and adds the security headers. Narrowing it drops the app's CSP; see [`architecture.md`](./architecture.md#9-security-baseline). |
 | `migrations` | `v1`: `new_sqlite_classes: ["UserHub"]` | Durable Object class migration. |
 | `triggers.crons` | `["*/1 * * * *"]` | Runs `scheduled()` every minute. Without it, nothing in `cron.ts` runs: no scheduled sends, reminders, purges or retention. |
-| `name` | `cfmail-local` at the top level; `mail-<name>` per deployment in the runbook | The Worker's name in Cloudflare. |
+| `name` | `cfx-mail-local` at the top level; `mail-<name>` per deployment in the runbook | The Worker's name in Cloudflare. |
 
 ## 2. Worker secrets
 
@@ -109,7 +109,7 @@ These values are constants. Changing one is a code change.
 | 30 days in Trash, 30 days of service mail | `cron.ts` |
 | 30-day sessions renewed daily; 10 sign-ins a minute | `auth.ts` |
 | 7-day invites | `api/users.ts` |
-| Product name "cfmail" (passkey `rpName`, page title, web manifest) | `auth.ts`, `apps/web/index.html`, `apps/web/public/manifest.webmanifest` |
+| Product name "cfx-mail" (passkey `rpName`, page title, web manifest) | `auth.ts`, `apps/web/index.html`, `apps/web/public/manifest.webmanifest` |
 
 ## 6. Web app build
 

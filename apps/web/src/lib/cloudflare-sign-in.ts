@@ -1,5 +1,5 @@
 // The sentence for a refused or broken Cloudflare sign-in, from the error code
-// Better Auth puts on /login. "not_an_admin" is cfmail's own (auth.ts).
+// Better Auth puts on /login. "not_an_admin" is cfx-mail's own (auth.ts).
 export function cloudflareSignInError(code: string | null): string | null {
   if (!code) return null;
   return code === "not_an_admin"

@@ -27,7 +27,7 @@ function LoginPage() {
 }
 
 // Admins sign in with their Cloudflare account. Cloudflare sends the browser
-// back to /app, or to /login with an error code when cfmail refuses.
+// back to /app, or to /login with an error code when cfx-mail refuses.
 function CloudflareButton({ label, disabled }: { label: string; disabled?: boolean }) {
   const [busy, setBusy] = useState(false);
   async function start() {

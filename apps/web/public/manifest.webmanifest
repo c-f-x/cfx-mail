@@ -1,6 +1,6 @@
 {
-  "name": "cfmail",
-  "short_name": "cfmail",
+  "name": "cfx-mail",
+  "short_name": "cfx-mail",
   "description": "Self-hosted mail on Cloudflare",
   "start_url": "/",
   "scope": "/",

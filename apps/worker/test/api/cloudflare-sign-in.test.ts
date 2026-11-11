@@ -7,7 +7,7 @@ import { applyMigrationsOnce, db, e, resetDb } from "../support/app.ts";
 import { call, createUser, type Jar, signIn } from "../support/session.ts";
 
 // Admins sign in with their Cloudflare account. The OAuth client is private,
-// so Cloudflare lets only members of the owner's account through; cfmail then admits
+// so Cloudflare lets only members of the owner's account through; cfx-mail then admits
 // only an admin. On a deployment with no users yet, the first such sign-in
 // creates the admin, in place of the setup token. These tests run the deployed
 // app with the real Better Auth, standing in only for Cloudflare's token and
@@ -215,7 +215,7 @@ describe("admin sign-in with Cloudflare", () => {
       { provider: "cloudflare", callbackURL: "/app", errorCallbackURL: "/login" },
       configured,
     );
-    // The link starts, so the refusal below is cfmail's, not a broken request.
+    // The link starts, so the refusal below is cfx-mail's, not a broken request.
     expect(start.status).toBe(200);
     const { url } = (await start.json()) as { url: string };
     const state = new URL(url).searchParams.get("state");

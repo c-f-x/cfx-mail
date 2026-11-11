@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { cloudflareSignInError } from "./cloudflare-sign-in.ts";
 
-// Cloudflare sign-in sends the browser back to /login?error=<code> when cfmail
+// Cloudflare sign-in sends the browser back to /login?error=<code> when cfx-mail
 // refuses it. The code is the server's; the sentence is for the person.
 describe("cloudflareSignInError", () => {
   it("explains that Cloudflare sign-in is only for the administrator", () => {

@@ -23,12 +23,12 @@ const inlineUsed: UploadedAttachment = {
   contentType: "image/png",
   sizeBytes: 5,
   inline: true,
-  contentId: "a@cfmail",
+  contentId: "a@cfx-mail",
 };
 const inlineRemoved: UploadedAttachment = {
   ...inlineUsed,
   r2Key: "draft/u/3-b.png",
-  contentId: "b@cfmail",
+  contentId: "b@cfx-mail",
 };
 
 describe("draftSnapshot", () => {
@@ -67,10 +67,9 @@ describe("draftSnapshot", () => {
 
 describe("outboundAttachments", () => {
   it("keeps files and the inline images still in the body", () => {
-    expect(outboundAttachments([file, inlineUsed, inlineRemoved], new Set(["a@cfmail"]))).toEqual([
-      file,
-      inlineUsed,
-    ]);
+    expect(outboundAttachments([file, inlineUsed, inlineRemoved], new Set(["a@cfx-mail"]))).toEqual(
+      [file, inlineUsed],
+    );
   });
 });
 
@@ -136,7 +135,7 @@ describe("sendPayload", () => {
         filename: "a.png",
         contentType: "image/png",
         inline: true,
-        contentId: "a@cfmail",
+        contentId: "a@cfx-mail",
       },
     ]);
   });

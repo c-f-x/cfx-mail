@@ -9,7 +9,7 @@ import { buildPushRequest } from "./webpush.ts";
 const VAPID_PUBLIC = "vapid_public";
 const VAPID_PRIVATE = "vapid_private_jwk";
 // Anonymous contact required by the VAPID spec; never receives mail.
-const ADMIN_CONTACT = "mailto:push@cfmail.invalid";
+const ADMIN_CONTACT = "mailto:push@cfx-mail.invalid";
 
 export interface VapidKeys {
   publicKey: string;

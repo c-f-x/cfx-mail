@@ -3,7 +3,7 @@
 // runtime (stale-while-revalidate) and serves the cached shell when offline.
 // API traffic (auth + SSE realtime) is never intercepted.
 
-const CACHE = "cfmail-v2";
+const CACHE = "cfx-mail-v2";
 const SHELL = "/index.html";
 
 self.addEventListener("install", (event) => {

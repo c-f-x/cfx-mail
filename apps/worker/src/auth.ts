@@ -47,7 +47,7 @@ export function cloudflareSignIn(env: Env): boolean {
 }
 
 // Who may sign in with Cloudflare. The client is private, so Cloudflare admits
-// only members of the account that owns it; cfmail then admits only an admin:
+// only members of the account that owns it; cfx-mail then admits only an admin:
 // the first person on a deployment with no users (who becomes its admin, in
 // place of the setup token), or an existing admin with the same email. It never
 // creates a second account and never attaches to a non-admin.
@@ -79,7 +79,7 @@ export function authPlugins(baseURL: string) {
     // so passkeys bind to whatever domain the deployment is served on.
     passkey({
       rpID: new URL(baseURL).hostname,
-      rpName: "cfmail",
+      rpName: "cfx-mail",
       origin: baseURL,
     }),
   ];
