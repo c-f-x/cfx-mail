@@ -18,14 +18,14 @@ The repository is a pnpm workspace (`pnpm-workspace.yaml`) with two apps and two
 |---|---|
 | `src/index.ts` | The Worker entry. Exports `fetch`, `email`, `connect`, `scheduled` and `UserHub`. Holds the app-shell security headers. |
 | `src/api/` | HTTP transport. `index.ts` composes every route group in one Hono chain and turns errors into JSON. One file per route group (`messages.ts`, `threads.ts`, `mailboxes.ts`, `admin.ts`, `svc.ts` and so on). `stream.ts` opens the SSE stream. `pagination.ts`, `serialize.ts` and `util.ts` are helpers for the routes. `message-body.ts` renders stored message bodies for the reader, for the single-body and the thread-bodies route. `validate.ts` is the `zValidator` every route uses; it answers a failed validation with `{ error: "<sentence>" }`. |
-| `src/mail/` | Mail logic, independent of any transport. Inbound: `receive.ts` (pipeline), `ingest.ts` (storage), `threads.ts` (threading), `spam.ts`, `dnsbl.ts`, `dns.ts`, `rules.ts`, `rule-sends.ts`, `blocklist.ts`, `calendar.ts`. Outbound: `send.ts`, `quote.ts`, `notify.ts`, `unsubscribe.ts`. Reading: `sanitize.ts`, `hidden-style.ts`, `img-proxy.ts`, `trackers.ts`. Storage: `blob-keys.ts` (every R2 key layout), `blobs.ts`, `attachment-keys.ts`, `mime.ts`. Push: `push.ts`, `webpush.ts`. PGP: `pgp.ts`, `wkd.ts`. |
+| `src/mail/` | Mail logic, independent of any transport. Inbound: `receive.ts` (pipeline), `ingest.ts` (storage), `threads.ts` (threading), `spam.ts`, `dnsbl.ts`, `dns.ts`, `rules.ts`, `rule-sends.ts`, `blocklist.ts`, `calendar.ts`. Outbound: `send.ts`, `quote.ts`, `notify.ts`, `unsubscribe.ts`. Reading: `sanitize.ts`, `hidden-style.ts`, `img-proxy.ts`, `trackers.ts`. Storage: `blob-keys.ts` (every R2 key layout), `blobs.ts`, `orphan-blobs.ts` (the hourly sweep of unreferenced uploads and avatars), `attachment-keys.ts`, `mime.ts`. Push: `push.ts`, `webpush.ts`. PGP: `pgp.ts`, `wkd.ts`. |
 | `src/imap/` | The IMAP server (not in use). `index.ts` takes the socket, `session.ts` is the protocol state machine, `protocol.ts` the wire format, `store.ts` maps mailboxes to IMAP folders and owns the UID tables, `fetch.ts`, `search.ts` and `mime-tree.ts` serve FETCH and SEARCH, `hub-listener.ts` wakes `IDLE`. |
 | `src/lib/` | Small pure helpers with no local imports: `encoding.ts`, `html-strip.ts`, `sql.ts` (D1's 100-parameter chunking), `unread.ts` (the unread recount shared by `api/` and `imap/`). |
 | `src/shims/` | Small stand-ins for two dependencies, wired through `alias` in `wrangler.jsonc`. |
 | `src/auth.ts`, `auth-ctx.ts`, `middleware.ts` | Better Auth setup, per-request auth instance, and the `sessionMiddleware`, `requireUser`, `requireAdmin` guards. |
 | `src/permissions.ts`, `mailbox-access.ts` | Mailbox access checks, and who may create which mailbox type on a domain. |
 | `src/config.ts` | `system_config` access and the lazily created secrets. |
-| `src/cron.ts` | The ten scheduled steps. |
+| `src/cron.ts` | The fourteen scheduled steps. |
 | `src/hub.ts` | The `UserHub` Durable Object and `broadcastToUsers`. |
 | `src/app-passwords.ts` | IMAP app-password login. |
 | `src/mailbox-purge.ts` | Marks a mailbox for the staged purge. |
@@ -110,7 +110,7 @@ Two more rules come from `AGENTS.md`:
 ### Findings
 
 - Violation of invariant 9: `apps/worker/src/middleware.ts` is a root module and throws `HTTPException` in `requireUser` and `requireAdmin`. It is used only by `api/`, so the effect is contained, but the rule as written is broken.
-- Root modules and `mail/` depend on each other at folder level. `auth.ts` imports `mail/notify.ts`, `config.ts` imports `mail/pgp.ts`, `app-passwords.ts` imports `mail/dnsbl.ts`, and `cron.ts` imports six `mail/` modules, while `mail/` imports `config.ts`, `hub.ts`, `permissions.ts` and others. No rule forbids this and there is no file-level runtime cycle.
+- Root modules and `mail/` depend on each other at folder level. `auth.ts` imports `mail/notify.ts`, `config.ts` imports `mail/pgp.ts`, `app-passwords.ts` imports `mail/dnsbl.ts`, and `cron.ts` imports nine `mail/` modules, while `mail/` imports `config.ts`, `hub.ts`, `permissions.ts` and others. No rule forbids this and there is no file-level runtime cycle.
 - One type-only cycle: `env.ts` imports the `Auth` type from `auth.ts`, which imports the `Env` type from `env.ts` (also through `config.ts` and `mail/notify.ts`). It has no runtime effect.
 - `DELETE /api/mailboxes/:id` (`api/mailboxes.ts`) checks `ownerUserId` itself instead of going through `permissions.ts`. It is an owner-only rule, not a copy of the owner shortcut, so it does not break invariant 2.
 

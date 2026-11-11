@@ -331,7 +331,7 @@ const BUDGETS: Budget[] = [
   { name: "send (sendFromMailbox)", limit: 7, measure: send }, // measured 6
   { name: "inbound delivery, plain", limit: 16, measure: inboundPlain }, // measured 14
   { name: "inbound delivery, joining a thread", limit: 17, measure: inboundJoiningThread }, // measured 15
-  { name: "idle cron tick", limit: 11, measure: idleCronTick }, // measured 10
+  { name: "idle cron tick", limit: 14, measure: idleCronTick }, // measured 13 on 2026-11-11 (three housekeeping deletes; was 10)
 ];
 
 function overBudget(name: string, limit: number, count: StatementCount): string {

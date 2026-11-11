@@ -68,7 +68,7 @@ Look at these first. They mean mail or data may be lost, or the app is failing.
 | `ingest_undo_failed` | `mail/ingest.ts` | A failed delivery could not clean up what it had written. Fields: `rawKey`, `blobs`, `threadId`. | Files in the bucket may be orphaned. Harmless but untidy. |
 | `unhandled` | `api/index.ts` | A request ended in a 500. The user sees `internal_error`. | Read the error that follows. A cluster of these is an outage. |
 | `health_failed` | `api/index.ts` | The health check could not reach `db` or `storage`. | See the health table above. Check Cloudflare's status page. |
-| `cron step failed: <name>` | `cron.ts` | One of the minute-by-minute jobs threw. The other jobs still ran. Names: `scheduled-sends`, `reminders`, `expire-temp-mailboxes`, `purge-trash`, `purge-service-retention`, `purge-pending-mailboxes`, `delete-purged-users`, `prune-rate-limit-counters`, `dns-recheck`, `tracker-list`. | One line is a blip. The same name every minute is a broken job. |
+| `cron step failed: <name>` | `cron.ts` | One of the minute-by-minute jobs threw. The other jobs still ran. Names: `scheduled-sends`, `reminders`, `expire-temp-mailboxes`, `purge-trash`, `purge-service-retention`, `purge-pending-mailboxes`, `delete-purged-users`, `prune-rate-limit-counters`, `prune-expired-sessions`, `prune-rule-send-log`, `prune-used-invites`, `sweep-orphan-blobs` (on the hour only), `dns-recheck`, `tracker-list`. | One line is a blip. The same name every minute is a broken job. |
 | `scheduled send failed for draft <id> (attempt n/m)` | `cron.ts` | A scheduled message could not be sent. It is retried, and handed back to the author as a draft after the last attempt. | Tell the author if the last attempt fails. |
 | `scheduled_send_cleanup_failed` | `cron.ts` | A scheduled message was sent, but its draft row (`step: "draft"`) or temporary files (`step: "blobs"`) could not be removed. | For `draft`, the message may be sent a second time when the draft's lease ends (about 10 minutes). Check the author's Drafts. |
 | `rule_send_failed` | `mail/rule-sends.ts` | A rule that forwards or auto-replies could not send. Fields: `mailboxId`, `ruleId`, `error`. | A forward target is not receiving. Check the rule and the sending domain. |
@@ -86,6 +86,7 @@ Quieter lines. They point at one feature or a degraded extra:
 | `server-side html sanitize failed`, `quote html sanitize failed` | `mail/sanitize.ts` | Cleaning a mail body failed. |
 | `dns check failed for <domain>` | `cron.ts` | The SPF, DKIM and DMARC re-check for a domain failed. |
 | `reminder dispatch failed for <id>` | `cron.ts` | A reminder was not delivered. |
+| `orphan_sweep_truncated` | `mail/orphan-blobs.ts` | The hourly sweep listed its limit of keys under one prefix (`prefix`) and left the rest for the next hour. A bucket that grows past the limit is never swept to the end. |
 | `tracker list fetch failed: <source>` | `mail/trackers.ts` | The tracker list could not be refreshed; the last list stays in use. |
 | `hub broadcast failed`, `push rejected`, `push send failed`, `pushToUsers failed`, `notifyMailbox failed` | `hub.ts`, `mail/push.ts` | Live updates or browser notifications failed. Mail is unaffected. |
 | `imap ...` | `imap/` | IMAP is not in use (`decisions.md`, D-7). |
