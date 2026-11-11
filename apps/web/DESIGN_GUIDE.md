@@ -1,6 +1,6 @@
 # Design Guide
 
-How the cfmail web client looks and feels. This is a **rules** document, not a snapshot — it
+How the cfx-mail web client looks and feels. This is a **rules** document, not a snapshot — it
 should stay true as the UI evolves. When a rule and the code disagree, fix one of them.
 
 ## Philosophy

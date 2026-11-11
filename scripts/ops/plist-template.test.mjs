@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 const template = readFileSync(
-  join(import.meta.dirname, "com.cfmail.backup.plist.template"),
+  join(import.meta.dirname, "com.cfx-mail.backup.plist.template"),
   "utf8",
 );
 const [comment = "", body = ""] = template.split("-->");

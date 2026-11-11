@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes how cfmail works, as the code stands on `master`. Every statement names the file that implements it. Where something is planned or only assumed, it says so.
+This document describes how cfx-mail works, as the code stands on `master`. Every statement names the file that implements it. Where something is planned or only assumed, it says so.
 
 Related documents:
 
@@ -11,7 +11,7 @@ Related documents:
 
 ## 1. What the system is
 
-cfmail is webmail that runs entirely on Cloudflare. One Cloudflare Worker (a serverless program) serves the web app, the HTTP API, inbound mail, scheduled jobs and an IMAP server. Mail data lives in D1, Cloudflare's SQLite database, and in R2, Cloudflare's file storage. It is a private copy of Newspicel/cloudflare-mail (D-1).
+cfx-mail is webmail that runs entirely on Cloudflare. One Cloudflare Worker (a serverless program) serves the web app, the HTTP API, inbound mail, scheduled jobs and an IMAP server. Mail data lives in D1, Cloudflare's SQLite database, and in R2, Cloudflare's file storage. It is a private copy of Newspicel/cloudflare-mail (D-1).
 
 One shared deployment holds the mail domains of most of the owner's projects (D-8). Its users are the owner's own staff, all known to the owner. An admin of the deployment is admin for every project in it and can reach every user's mail (D-9). Projects also send their own mail, such as sign-in links, through service mailboxes (D-7).
 

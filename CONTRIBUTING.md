@@ -1,6 +1,6 @@
 # Contributing
 
-cf-mail started as a copy of [Newspicel/cloudflare-mail](https://github.com/Newspicel/cloudflare-mail). The codebase is small and opinionated, so please read this once before opening a pull request. `CLAUDE.md` holds the project's own rules and wins where this file disagrees.
+cfx-mail started as a copy of [Newspicel/cloudflare-mail](https://github.com/Newspicel/cloudflare-mail). The codebase is small and opinionated, so please read this once before opening a pull request. `CLAUDE.md` holds the project's own rules and wins where this file disagrees.
 
 ## Ground rules
 

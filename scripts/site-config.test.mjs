@@ -56,9 +56,9 @@ test("each wrong or missing value is named", () => {
 
 test("an unknown deployment lists the known ones", () => {
   assert.deepEqual(deploymentValues(site, "other").errors, [
-    'No deployment named "other" in cf-mail.jsonc (it has: demo).',
+    'No deployment named "other" in cfx-mail.jsonc (it has: demo).',
   ]);
-  assert.deepEqual(deploymentValues({}, "demo").errors, ['cf-mail.jsonc has no "deployments".']);
+  assert.deepEqual(deploymentValues({}, "demo").errors, ['cfx-mail.jsonc has no "deployments".']);
 });
 
 test("the joined config adds one env block with every binding the Worker needs", () => {
@@ -95,9 +95,9 @@ test("paths in the joined config are absolute, since it is written elsewhere", (
 });
 
 test("the site file is read from CFX_SITE and the config written to the scratch folder", async () => {
-  const scratch = await mkdtemp(join(tmpdir(), "cfmail-site-test-"));
+  const scratch = await mkdtemp(join(tmpdir(), "cfx-mail-site-test-"));
   try {
-    await writeFile(join(scratch, "cf-mail.jsonc"), `// comment\n${JSON.stringify(site)}`);
+    await writeFile(join(scratch, "cfx-mail.jsonc"), `// comment\n${JSON.stringify(site)}`);
     const { configPath, accountId } = writeJoinedConfig("demo", scratch, { CFX_SITE: scratch });
     assert.equal(configPath, join(scratch, "wrangler.jsonc"));
     assert.equal(accountId, good.account_id);

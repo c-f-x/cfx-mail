@@ -53,30 +53,30 @@ Do this after the first real deployment and one manual backup that ended without
 Try it by hand first. Use a folder outside Documents, Desktop and Downloads, because macOS may stop a background job from writing there.
 
 ```bash
-CFX_SITE=<site checkout> scripts/ops/backup-daily.sh <name> ~/cfmail-backups 14
+CFX_SITE=<site checkout> scripts/ops/backup-daily.sh <name> ~/cfx-mail-backups 14
 ```
 
 If the installed pnpm is older than 12, set `CFMAIL_PNPM="npx -y pnpm@12.4.1"` in front of the command. For the daily job, add it to the plist's `EnvironmentVariables` dictionary as a second key.
 
 Then install the job:
 
-1. Copy `scripts/ops/com.cfmail.backup.plist.template` to `~/Library/LaunchAgents/com.cfmail.backup.<name>.plist`.
+1. Copy `scripts/ops/com.cfx-mail.backup.plist.template` to `~/Library/LaunchAgents/com.cfx-mail.backup.<name>.plist`.
 2. Replace every `__PLACEHOLDER__`. The comment at the top of the file explains each one. `__SITE__` is the site checkout, the same path you give `CFX_SITE`. For `__PATH__`, paste the output of `echo $PATH` from your terminal, so the job finds `node`, `pnpm` and `trash`.
-3. Check the file: `plutil -lint ~/Library/LaunchAgents/com.cfmail.backup.<name>.plist`.
-4. Load it: `launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.cfmail.backup.<name>.plist`.
-5. Run it once now to see it work: `launchctl kickstart -k gui/$UID/com.cfmail.backup.<name>`.
+3. Check the file: `plutil -lint ~/Library/LaunchAgents/com.cfx-mail.backup.<name>.plist`.
+4. Load it: `launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.cfx-mail.backup.<name>.plist`.
+5. Run it once now to see it work: `launchctl kickstart -k gui/$UID/com.cfx-mail.backup.<name>`.
 
 The job runs while you are logged in. If the Mac sleeps at the set time, launchd runs it when the Mac wakes (`man launchd.plist`, `StartCalendarInterval`).
 
 Check that it ran:
 
 ```bash
-ls ~/cfmail-backups                         # a folder named for today
-tail -n 20 ~/Library/Logs/cfmail-backup-<name>.log
-launchctl print gui/$UID/com.cfmail.backup.<name> | grep -E 'state|last exit'
+ls ~/cfx-mail-backups                         # a folder named for today
+tail -n 20 ~/Library/Logs/cfx-mail-backup-<name>.log
+launchctl print gui/$UID/com.cfx-mail.backup.<name> | grep -E 'state|last exit'
 ```
 
-A good run ends with `cfmail backup: saved ...`. A failed one has a line starting `cfmail backup FAILED`. The log grows by a few lines a day; trash it now and then. A failure shows up only in the log and as a missing dated folder, so look weekly (see `monitoring.md`).
+A good run ends with `cfx-mail backup: saved ...`. A failed one has a line starting `cfx-mail backup FAILED`. The log grows by a few lines a day; trash it now and then. A failure shows up only in the log and as a missing dated folder, so look weekly (see `monitoring.md`).
 
 If a run dies and leaves `<backup root>/.lock`, the next run refuses to start and says so. Remove that folder once you are sure no backup is running.
 
@@ -85,8 +85,8 @@ The backup root holds password hashes and secrets, like any backup. Keep it on a
 Remove it:
 
 ```bash
-launchctl bootout gui/$UID/com.cfmail.backup.<name>
-trash ~/Library/LaunchAgents/com.cfmail.backup.<name>.plist
+launchctl bootout gui/$UID/com.cfx-mail.backup.<name>
+trash ~/Library/LaunchAgents/com.cfx-mail.backup.<name>.plist
 ```
 
 ## Practise it locally

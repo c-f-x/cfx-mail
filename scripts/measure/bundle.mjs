@@ -3,9 +3,9 @@
 // Build first:
 //   npx -y pnpm@12.4.1 --filter @cfmail/web build
 //   cd apps/worker && npx -y pnpm@12.4.1 exec wrangler deploy --dry-run \
-//     --outdir=/tmp/cfmail-worker-dist --metafile=/tmp/cfmail-worker-meta.json
+//     --outdir=/tmp/cfx-mail-worker-dist --metafile=/tmp/cfx-mail-worker-meta.json
 // Then, from the repo root:
-//   node scripts/measure/bundle.mjs /tmp/cfmail-worker-dist /tmp/cfmail-worker-meta.json
+//   node scripts/measure/bundle.mjs /tmp/cfx-mail-worker-dist /tmp/cfx-mail-worker-meta.json
 // Gzip is level 9 (Cloudflare serves brotli or gzip; real transfer is a little smaller).
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";

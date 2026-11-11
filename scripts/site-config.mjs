@@ -2,7 +2,7 @@
 // values from the private site file, so the repository holds no account id,
 // resource id or hostname (decision D-16, c-f-x conventions section 4).
 //
-// The site file is `<CFX_SITE>/cf-mail.jsonc`, where CFX_SITE is the path of a
+// The site file is `<CFX_SITE>/cfx-mail.jsonc`, where CFX_SITE is the path of a
 // local checkout of the owner's private site repository:
 //
 //   {
@@ -17,7 +17,7 @@
 //     }
 //   }
 //
-// This is the smallest loader cf-mail needs. It is replaced by the shared one
+// This is the smallest loader cfx-mail needs. It is replaced by the shared one
 // in @c-f-x/kit once the kit is published (D-16).
 //
 // CLI: node scripts/site-config.mjs <name> <scratch folder>
@@ -31,7 +31,7 @@ import { parseJsonc } from "./backup/lib.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const templatePath = join(root, "apps", "worker", "wrangler.jsonc");
-export const SITE_FILE = "cf-mail.jsonc";
+export const SITE_FILE = "cfx-mail.jsonc";
 
 const ACCOUNT_ID = /^[0-9a-f]{32}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -136,7 +136,7 @@ export function writeJoinedConfig(name, scratch, env = process.env) {
 // writeJoinedConfig into a scratch folder of its own, removed when the process
 // ends, whatever the ending.
 export async function openDeployment(name, env = process.env) {
-  const scratch = await mkdtemp(join(env.TMPDIR || tmpdir(), "cfmail-site-"));
+  const scratch = await mkdtemp(join(env.TMPDIR || tmpdir(), "cfx-mail-site-"));
   process.once("exit", () => rmSync(scratch, { recursive: true, force: true }));
   return writeJoinedConfig(name, scratch, env);
 }

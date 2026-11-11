@@ -3,7 +3,7 @@
 // the repository and runs the tests that should notice. A case passes only
 // when the named test fails. The unchanged copy runs first and must pass, so
 // a broken harness cannot pass for a removed check. Shape copied from
-// cfanalytics' scripts/guard-proof.test.mjs (decision D-17).
+// cfx-analytics' scripts/guard-proof.test.mjs (decision D-17).
 //
 // Slow: each case starts its own workerd. It runs with `pnpm test:slow`, which
 // CI runs on every push to master.

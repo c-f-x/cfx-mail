@@ -18,11 +18,11 @@ import path from "node:path";
 // runs that died: it stops the processes they recorded and moves their folders
 // to the Trash.
 //
-// Copied from cfanalytics' scripts/lib/run-scope.mjs, the shape the c-f-x
+// Copied from cfx-analytics' scripts/lib/run-scope.mjs, the shape the c-f-x
 // kit's `check run-scope` will take. The kit's copy replaces this one once it
 // is published (decision D-17).
 
-export const DEFAULT_ROOT = path.join(os.tmpdir(), "cfmail-runs");
+export const DEFAULT_ROOT = path.join(os.tmpdir(), "cfx-mail-runs");
 
 const OWNER = "owner.json";
 const PENDING = ".pending-";

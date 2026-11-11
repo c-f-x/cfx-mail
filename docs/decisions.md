@@ -171,3 +171,13 @@ Supersedes D-6.
 **Decision.** Every job runs on `ubuntu-latest` unless the repository variable `CI_RUNS_ON` names another runner.
 
 **Consequences.** CI no longer depends on the Mac being awake, and a fork's pull request runs without setup.
+
+## D-20 · The tool is named cfx-mail · decided (2026-11-11)
+
+**Made by.** The owner, for every c-f-x tool: "go for cfx-<toolname>" (c-f-x/cfx-kit D-9). Later the same day, on what keeps the old name: "we should transition that to cfx-mail over time, so we dont have old junk in our projects".
+
+**Context.** "cf-" reads like one of Cloudflare's own products and does not carry the family's name.
+
+**Decision.** The repository is `c-f-x/cfx-mail`, and the docs, scripts, root package, site file (`cfx-mail.jsonc`, `cfx-mail.md`) and agent skill use that name. Names that live in Cloudflare or the keychain stay as they are: the Worker, D1 and R2 names, hostnames, keychain service names, the OAuth client "cfmail admin sign-in" and the Email Routing rule name.
+
+**Consequences.** GitHub redirects the old URL. Three uses of the old name remain, each to move in a change of its own: the `@cfmail/*` package names (upstream's, imported by nearly every file), the product name people see in the app, and names stored in browsers and saved drafts (`cfmail-theme`, `data-cfmail-cid`, the `cfmail-quote` classes), which need a one-time copy so nobody loses a setting or an inline image. Entries above keep their original words.

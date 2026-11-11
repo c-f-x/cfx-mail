@@ -10,7 +10,7 @@ const helper = join(import.meta.dirname, "backup-retention.mjs");
 
 // A scratch folder that the test removes again, even when it fails.
 function withScratch(fn) {
-  const root = mkdtempSync(join(tmpdir(), "cfmail-retention-"));
+  const root = mkdtempSync(join(tmpdir(), "cfx-mail-retention-"));
   try {
     return fn(root);
   } finally {

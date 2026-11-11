@@ -28,7 +28,7 @@ const wranglerBin = join(workerDir, "node_modules", ".bin", "wrangler");
 let tmp;
 
 before(async () => {
-  tmp = await mkdtemp(join(tmpdir(), "cfmail-roundtrip-"));
+  tmp = await mkdtemp(join(tmpdir(), "cfx-mail-roundtrip-"));
   // Every wrangler this run starts inherits this, so its logs stay in the
   // run's own folder instead of the shared one in the home directory.
   process.env.WRANGLER_LOG_PATH = join(tmp, "wrangler-logs");

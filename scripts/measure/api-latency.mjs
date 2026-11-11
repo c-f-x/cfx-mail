@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Times the read paths of a LOCAL worker seeded by scripts/seed-local.mjs.
 //
-//   node scripts/measure/api-latency.mjs [--seed /tmp/cfmail-seed.json] [--runs 7]
+//   node scripts/measure/api-latency.mjs [--seed /tmp/cfx-mail-seed.json] [--runs 7]
 //
 // Signs in as the seeded admin and calls each read path `--runs` times in a
 // row. Reports the first call, the median and the worst, in milliseconds of
@@ -20,7 +20,7 @@ import { parseArgs } from "node:util";
 
 const { values: args } = parseArgs({
   options: {
-    seed: { type: "string", default: "/tmp/cfmail-seed.json" },
+    seed: { type: "string", default: "/tmp/cfx-mail-seed.json" },
     runs: { type: "string", default: "7" },
   },
 });

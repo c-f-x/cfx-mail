@@ -4,7 +4,7 @@ import { openRunScope } from "./run-scope.mjs";
 // Vitest global setup: the test run's own scope. Wrangler and the Workers test
 // pool write their logs inside it instead of the shared folder in the home
 // directory, and the scope is removed when the run ends. A run that leaves
-// anything of its own behind fails. Copied from cfanalytics (decision D-17).
+// anything of its own behind fails. Copied from cfx-analytics (decision D-17).
 export default function setup() {
   const scope = openRunScope({ installExitHandlers: true });
   process.env.WRANGLER_LOG_PATH = path.join(scope.dir, "wrangler-logs");

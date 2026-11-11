@@ -18,7 +18,7 @@ after(() => {
 
 // A build output on disk: a Worker index.js and a web dist with the given files.
 function fakeBuild({ workerBytes, webFiles }) {
-  const root = mkdtempSync(path.join(tmpdir(), "cfmail-budget-test-"));
+  const root = mkdtempSync(path.join(tmpdir(), "cfx-mail-budget-test-"));
   made.push(root);
   const workerDir = path.join(root, "worker");
   const webDir = path.join(root, "web");
@@ -72,8 +72,8 @@ test("the report names the measured value, the limit and what to do", () => {
 
 test("run reports a missing build output with exit code 2", () => {
   const { code, output } = run({
-    workerDir: path.join(tmpdir(), "cfmail-no-such-dir", "worker"),
-    webDir: path.join(tmpdir(), "cfmail-no-such-dir", "web"),
+    workerDir: path.join(tmpdir(), "cfx-mail-no-such-dir", "worker"),
+    webDir: path.join(tmpdir(), "cfx-mail-no-such-dir", "web"),
   });
   assert.equal(code, 2);
   assert.match(output, /Build output not found/);

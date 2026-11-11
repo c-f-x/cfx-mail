@@ -1,4 +1,4 @@
-# cfmail
+# cfx-mail
 
 Our private copy of [Newspicel/cloudflare-mail](https://github.com/Newspicel/cloudflare-mail) (MIT). It gives people mailboxes on our own project domains. One deployment serves several domains.
 

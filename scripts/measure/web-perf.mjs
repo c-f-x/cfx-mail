@@ -5,7 +5,7 @@
 // Needs Playwright, which is not a repo dependency. Install it outside the repo:
 //   mkdir -p /tmp/pw && npm i --prefix /tmp/pw playwright-core
 //   node scripts/measure/web-perf.mjs --playwright /tmp/pw/node_modules/playwright-core \
-//     [--chromium <path to a Chromium binary>] [--seed /tmp/cfmail-seed.json] [--runs 5] [--threads 1000]
+//     [--chromium <path to a Chromium binary>] [--seed /tmp/cfx-mail-seed.json] [--runs 5] [--threads 1000]
 //
 // Build the web app first (npx -y pnpm@12.4.1 --filter @cfmail/web build); the
 // worker serves apps/web/dist. Each run uses a fresh browser context, so the
@@ -18,7 +18,7 @@ import { parseArgs } from "node:util";
 
 const { values: args } = parseArgs({
   options: {
-    seed: { type: "string", default: "/tmp/cfmail-seed.json" },
+    seed: { type: "string", default: "/tmp/cfx-mail-seed.json" },
     runs: { type: "string", default: "5" },
     threads: { type: "string", default: "1000" },
     playwright: { type: "string", default: "playwright-core" },
@@ -34,14 +34,14 @@ if (!["localhost", "127.0.0.1"].includes(BASE.hostname)) throw new Error("local 
 // Collected in the page from the first byte: long tasks and the moment the
 // first thread row is in the DOM.
 const INIT = () => {
-  window.cfmailPerf = { longTasks: [], firstRowAt: null };
+  window.cfxMailPerf = { longTasks: [], firstRowAt: null };
   new PerformanceObserver((list) => {
     for (const e of list.getEntries())
-      window.cfmailPerf.longTasks.push({ start: e.startTime, duration: e.duration });
+      window.cfxMailPerf.longTasks.push({ start: e.startTime, duration: e.duration });
   }).observe({ type: "longtask", buffered: true });
   const mo = new MutationObserver(() => {
-    if (!window.cfmailPerf.firstRowAt && document.querySelector("[data-index]")) {
-      window.cfmailPerf.firstRowAt = performance.now();
+    if (!window.cfxMailPerf.firstRowAt && document.querySelector("[data-index]")) {
+      window.cfxMailPerf.firstRowAt = performance.now();
       mo.disconnect();
     }
   });
@@ -85,12 +85,12 @@ for (let i = 0; i < Number(args.runs); i++) {
     const nav = performance.getEntriesByType("navigation")[0];
     const res = performance.getEntriesByType("resource");
     const by = (pred) => res.filter(pred).reduce((n, r) => n + r.encodedBodySize, 0);
-    const lt = window.cfmailPerf.longTasks;
+    const lt = window.cfxMailPerf.longTasks;
     return {
       ttfb: nav.responseStart,
       dcl: nav.domContentLoadedEventEnd,
       load: nav.loadEventEnd,
-      firstRow: window.cfmailPerf.firstRowAt,
+      firstRow: window.cfxMailPerf.firstRowAt,
       requests: res.length + 1,
       apiRequests: res.filter((r) => r.name.includes("/api/")).length,
       jsBytes: by((r) => r.name.endsWith(".js")),
@@ -140,7 +140,7 @@ for (let i = 0; i < Math.min(3, Number(args.runs)); i++) {
   await page.waitForSelector("[data-index]");
   const heapStartMb = await page.evaluate(() => {
     window.gc?.();
-    window.cfmailPerf.longTasks = [];
+    window.cfxMailPerf.longTasks = [];
     return performance.memory ? performance.memory.usedJSHeapSize / 1048576 : null;
   });
   const target = Number(args.threads);
@@ -160,7 +160,7 @@ for (let i = 0; i < Math.min(3, Number(args.runs)); i++) {
   }
   await page.waitForLoadState("networkidle");
   const r = await page.evaluate(() => {
-    const lt = window.cfmailPerf.longTasks;
+    const lt = window.cfxMailPerf.longTasks;
     return {
       rowsInDom: document.querySelectorAll("[data-index]").length,
       longTaskCount: lt.length,

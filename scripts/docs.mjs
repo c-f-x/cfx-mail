@@ -1,5 +1,5 @@
 // What the docs check reads. Pure: callers pass text and an `exists` function.
-// The path rule comes from cfanalytics' scripts/lib/docs.mjs, the shape the
+// The path rule comes from cfx-analytics' scripts/lib/docs.mjs, the shape the
 // c-f-x kit's `check docs` will take; this copy is replaced by the kit's once
 // it is published (decision D-16 explains the same choice for the loader).
 
