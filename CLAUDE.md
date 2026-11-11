@@ -18,7 +18,7 @@ Read `AGENTS.md` for upstream's invariants and the migration workflow. Where thi
 ## Upstream
 
 - Imported at `bc1271a985c9ed12326b9b6aedcd7256808db133` (2026-09-30).
-- The `upstream` remote points at the public repository. Fetch it, review the changes, and merge by hand. Never track it automatically.
+- Add the `upstream` remote once per clone: `git remote add upstream https://github.com/Newspicel/cloudflare-mail.git`. Fetch it, review the changes, and merge by hand. Never track it automatically.
 - Merge pull requests that bring in upstream history with a merge commit. A squash discards that history and makes the next upstream merge conflict.
 - Keep `LICENSE` and its copyright notice.
 - Change upstream's own files as little as the task allows. Every edit there is a possible conflict in the next upstream merge.
