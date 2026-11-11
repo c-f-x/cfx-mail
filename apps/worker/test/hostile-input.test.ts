@@ -1,5 +1,5 @@
 // One crafted mail must not burn minutes of CPU in the `email()` handler or on
-// `/body` (audit S3; 03 F4). Each pass below was quadratic on a long run of an
+// `/body`. Each pass below was quadratic on a long run of an
 // unterminated opener. Differential cases pin the rewrites to the regexes they
 // replaced, so ordinary mail produces the same output as before.
 

@@ -1,7 +1,6 @@
 // Reply and forward quote the original mail. The composer shows the user a
 // cleaned preview, but the outbound HTML is built here from the stored `.eml`,
-// so whatever survives this path goes out under the user's name and DKIM key
-// (audit S11; 03 F6).
+// so whatever survives this path goes out under the user's name and DKIM key.
 
 import { message } from "@cfmail/db/schema";
 import { eq } from "drizzle-orm";
