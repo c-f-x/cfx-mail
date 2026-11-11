@@ -152,18 +152,45 @@ describe("evaluateSpam — Spamhaus DQS", () => {
     expect(r.reasons.join(" ")).not.toMatch(/Spamhaus/);
   });
 
-  it("refuses a DBL-listed sender domain even when DMARC passes", async () => {
+  // An aligned signature proves the domain owner sent it. A bounce loses the
+  // mail for good, where the Spam folder does not.
+  // The listing scores instead, and no listing reaches the spam line alone.
+  it("scores a DBL-listed sender, without refusing it, when DMARC passes", async () => {
     stubDoh({ "elsewhere.com/dbl": ["127.0.1.4"] });
     const r = await evalStandard(
       parsed({ authResults: "mx; spf=pass; dkim=pass; dmarc=pass" }),
       dbWithDqsKey(DQS_KEY),
     );
-    expect(r.verdict).toBe("spam");
+    expect(r.verdict).toBe("suspicious");
     expect(r.reasons.join(" ")).toMatch(/sender domain \(elsewhere\.com\) is listed.*phishing/i);
+    expect(r.reject).toBeNull();
+  });
+
+  it("refuses a DBL-listed sender domain when DMARC fails", async () => {
+    stubDoh({ "elsewhere.com/dbl": ["127.0.1.4"] });
+    const r = await evalStandard(
+      parsed({ authResults: "mx; spf=fail; dkim=fail; dmarc=fail" }),
+      dbWithDqsKey(DQS_KEY),
+    );
     expect(r.reject).toBe(
       "elsewhere.com is listed by Spamhaus (DBL) — " +
         "https://check.spamhaus.org/listed/?searchterm=elsewhere.com",
     );
+  });
+
+  // A listed subdomain such as an ESP's bounce host is one sending stream,
+  // not the organisation behind the registered domain.
+  it("scores but does not refuse a listed sender subdomain, even when DMARC fails", async () => {
+    stubDoh({ "em1234.elsewhere.com/dbl": ["127.0.1.2"] });
+    const r = await evalStandard(
+      parsed({
+        authResults: "mx; spf=fail; dkim=fail; dmarc=fail",
+        from: "bounce@em1234.elsewhere.com",
+      }),
+      dbWithDqsKey(DQS_KEY),
+    );
+    expect(r.reasons.join(" ")).toMatch(/sender domain \(em1234\.elsewhere\.com\) is listed/);
+    expect(r.reject).toBeNull();
   });
 
   it("scores but does not refuse an abused-legit domain or a listed link", async () => {
@@ -309,14 +336,17 @@ describe("evaluateSpam — Spamhaus DQS", () => {
     expect(asked()).toContain(`dbl-dqs.blt.spamhaus.net.${DQS_KEY}.dbl.dq.spamhaus.net`);
     expect(asked()).toContain(`spamhaus.net.${DQS_KEY}.dbl.dq.spamhaus.net`);
     expect(r.reasons.join(" ")).toMatch(/sender domain \(dbl-dqs\.blt\.spamhaus\.net\)/);
-    expect(r.reject).toMatch(/dbl-dqs\.blt\.spamhaus\.net is listed by Spamhaus \(DBL\)/);
+    // A listed subdomain on signed mail scores; it does not refuse.
+    expect(r.reject).toBeNull();
   });
 
+  // The EHLO name is the relay's own, so a listed subdomain of it refuses too,
+  // on mail that fails DMARC.
   it("checks the EHLO name the relay gave", async () => {
     stubDoh({ "zrd-dqs.blt.spamhaus.net/zrd": ["127.0.2.2"] });
     const r = await evalStandard(
       parsed({
-        authResults: "mx; spf=pass; dkim=pass; dmarc=pass",
+        authResults: "mx; spf=fail; dkim=fail; dmarc=fail",
         from: "test@unlisted.blt.spamhaus.net",
         received: ["from zrd-dqs.blt.spamhaus.net (unknown [199.168.89.101]) by mx.cloudflare.net"],
       }),
