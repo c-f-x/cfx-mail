@@ -180,7 +180,7 @@ Filenames in keys are reduced to `[a-z0-9._-]` and 128 characters. No job lists 
 8. Stores the message with `ingestRaw` (`mail/ingest.ts`): raw blob first, then attachments, then one D1 batch with the message row, its attachment rows and the thread update. On any failure it deletes the blobs and the thread row it created, then rethrows. Threading is in `mail/threads.ts`: a reply-header match joins a thread only when the thread is recent and the sender is already a participant or writes through the same mailing list the thread came from (its `List-Id`); unauthenticated mail scored as spam always gets its own thread.
 9. After the store nothing may fail delivery. Rule labels and folders are applied with failures logged. Follow-up reminders on the thread are cancelled. Rule forwards and auto-replies run (`mail/rule-sends.ts`), skipped for spam, capped at 50 per mailbox per hour, and auto-replies only to authenticated senders. A `new_message` event goes to the owner and every member through `UserHub`. Push notifications go out unless the mail was filed as spam or auto-read (`mail/push.ts`).
 
-Failure behaviour: any throw before step 8 completes is logged once as `inbound_failed` with ids and the step name only, then rethrown to Email Routing. What the sending server sees after a throw is not yet confirmed (audit G7). Steps in 9 run under `ctx.waitUntil` and log `inbound_deferred_failed` or `inbound_post_store_failed`.
+Failure behaviour: any throw before step 8 completes is logged once as `inbound_failed` with ids and the step name only, then rethrown to Email Routing. What the sending server sees after a throw is not yet confirmed. Steps in 9 run under `ctx.waitUntil` and log `inbound_deferred_failed` or `inbound_post_store_failed`.
 
 ### 5.2 Sending
 
@@ -302,7 +302,7 @@ Email Routing hands each message to `email()` (`index.ts`, `mail/receive.ts`).
 
 - `message.setReject(reason)` is a permanent refusal the sender sees: unknown address, size, send-only, block, Spamhaus listing, `hardBlock` rule.
 - A normal return means accepted. That includes a duplicate the mailbox already holds.
-- A throw is used only for failures before the message is durably stored, so the sender can retry. Whether Email Routing turns a throw into a temporary failure is unconfirmed (audit G7).
+- A throw is used only for failures before the message is durably stored, so the sender can retry. Whether Email Routing turns a throw into a temporary failure is unconfirmed.
 
 ### `send_email` binding
 
@@ -346,9 +346,9 @@ The app shell's headers depend on routing. Until 2026-10-09, `wrangler.jsonc` ro
 
 Accepted risks:
 
-- Admins can reach every user's mail (D-9, audit B3). Better Auth's admin plugin is mounted (`authPlugins` in `auth.ts`), so `/api/auth/admin/*` lets an admin impersonate a user or set their password. `PATCH /api/admin/mailboxes/:id` re-owns a mailbox. The admin account signs in only through Cloudflare (D-14), so it rests on the owner's Cloudflare login and its two-factor.
-- A member with MANAGE can add any user to a mailbox without that user's consent (audit S14, left as is).
-- The PGP master key and the Web Push private key stay in `system_config` (audit S15). Neither feature is in use.
+- Admins can reach every user's mail (D-9). Better Auth's admin plugin is mounted (`authPlugins` in `auth.ts`), so `/api/auth/admin/*` lets an admin impersonate a user or set their password. `PATCH /api/admin/mailboxes/:id` re-owns a mailbox. The admin account signs in only through Cloudflare (D-14), so it rests on the owner's Cloudflare login and its two-factor.
+- A member with MANAGE can add any user to a mailbox without that user's consent. This is left as is.
+- The PGP master key and the Web Push private key stay in `system_config`. Neither feature is in use.
 - Sending goes through Email Sending, which is in beta and allows transactional mail only; a review could pause sending for the whole account (D-3).
 - CI runs pull requests on GitHub's hosted runners, never on a machine of the owner's (D-19).
 - The SSRF guard cannot stop DNS rebinding, because a Worker cannot pin the resolved address (`ssrf.ts`, header comment).

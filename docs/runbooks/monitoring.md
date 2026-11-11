@@ -38,7 +38,7 @@ Two things catch it:
 1. Once a week, send a message from an outside address (a personal account) to each mail domain's address and see that it arrives within a minute.
 2. Look at the logs for `inbound_failed` (see below). If it appears, mail was refused or lost on its way in.
 
-What a sending server sees when the inbound code fails is not yet known (audit gap G7). Until it is confirmed on a live zone, treat every `inbound_failed` line as possibly lost mail and ask the sender to resend.
+What a sending server sees when the inbound code fails is not yet known. Until it is confirmed on a live zone, treat every `inbound_failed` line as possibly lost mail and ask the sender to resend.
 
 ## Read the logs
 

@@ -55,7 +55,7 @@ Times were measured on the owner's Mac on 2026-11-11 without the turbo cache (`T
 | `pnpm lint` | oxlint and Biome | 2 s |
 | `pnpm typecheck` | `tsc` in all four packages | 6 s |
 | `pnpm build` | Vite build and a wrangler dry run | 11 s |
-| `pnpm test` | Worker tests (1,891), web tests (287), and the script tests under `scripts/` (73) | 125 s |
+| `pnpm test` | Worker tests (1,901), web tests (287), and the script tests under `scripts/` (99) | 125 s |
 | `pnpm test:slow` | The backup-and-restore round trip on local storage, and the guard proof (each access check removed in a scratch copy must fail a named test) | About 6 minutes: the round trip about 5, the guard proof 47 s (2026-11-11) |
 
 - Run lint and typecheck on every change.
