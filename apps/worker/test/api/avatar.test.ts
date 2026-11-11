@@ -86,7 +86,10 @@ describe("avatar", () => {
       expect(await obj!.text()).toBe("PNGDATA");
     });
 
-    it("replaces a prior avatar so only one blob remains", async () => {
+    // The profile shows the new picture only once it is saved, so the one it
+    // shows now must keep working until then (issue #8). The cron's orphan
+    // sweep removes a picture no profile points at (cron-housekeeping.test.ts).
+    it("keeps the current avatar serving after a new upload", async () => {
       await e.BLOBS.put(`avatar/${OWNER_ID}/old`, "OLD", {
         httpMetadata: { contentType: "image/png" },
       });
@@ -94,9 +97,10 @@ describe("avatar", () => {
         "content-type": "image/jpeg",
       });
       expect(res.status).toBe(200);
-      const list = await e.BLOBS.list({ prefix: `avatar/${OWNER_ID}/` });
-      expect(list.objects).toHaveLength(1);
-      expect(list.objects[0]?.key).not.toBe(`avatar/${OWNER_ID}/old`);
+
+      const current = await request(asOwner(), "GET", `/${OWNER_ID}/old`);
+      expect(current.status).toBe(200);
+      expect(await bodyText(current)).toBe("OLD");
     });
 
     it("415s an unsupported content-type", async () => {
