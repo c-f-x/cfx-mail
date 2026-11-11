@@ -65,7 +65,7 @@ There is no lifecycle rule on the bucket.
 
 ## Grows without limit
 
-These stores keep rows that nothing removes. Each is small per row, but the count only goes up. Tracked in issue #64.
+These stores keep rows that nothing removes. Each is small per row, but the count only goes up. Tracked in issue #2.
 
 - `thread` in Spam: never aged out, unlike Trash.
 - `draft`: abandoned drafts, and scheduled sends that failed.
