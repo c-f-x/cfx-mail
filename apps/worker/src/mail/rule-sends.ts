@@ -10,6 +10,8 @@ import type { RuleOutcome } from "./rules.ts";
 
 const HOUR_MS = 60 * 60 * 1000;
 const AUTO_REPLY_WINDOW_MS = 4 * 24 * HOUR_MS; // one vacation reply per sender / 4 days
+/** The longest window read from `rule_send_log`. Older rows change no decision; the cron removes them. */
+export const RULE_SEND_LOG_KEEP_MS = Math.max(AUTO_REPLY_WINDOW_MS, HOUR_MS);
 // Anti-relay backstop: a misconfigured rule can't turn a mailbox into a sender
 // to arbitrary addresses faster than this. Counts forwards + auto-replies.
 const MAILBOX_HOURLY_CAP = 50;

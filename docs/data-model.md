@@ -39,14 +39,14 @@ Facts were read from the code on 2026-11-11. "The cron" is `apps/worker/src/cron
 | `redirect` | an inbound alias or catch-all | until an admin removes it | an admin's delete; domain and target mailbox cascade |
 | `reminder` | a reminder or follow-up | forever, also after it fires | the user's delete; user, mailbox and thread cascade. Nothing removes fired or cancelled ones (see below) |
 | `rule` | a mailbox rule | until deleted | the rules route; mailbox and user cascade |
-| `rule_send_log` | one forward or auto-reply a rule sent, to cap the rate | forever | only a failed send's own row is removed; mailbox and rule cascade (see below) |
-| `session` | one signed-in browser, 30 days, renewed daily | until it expires and is presented again, or the user is banned, deleted or resets the password | Better Auth on presenting an expired session; the users routes; user cascade. Expired sessions never presented again stay (see below) |
+| `rule_send_log` | one forward or auto-reply a rule sent, to cap the rate | 4 days, the longest window read (`RULE_SEND_LOG_KEEP_MS` in `mail/rule-sends.ts`) | the cron's `pruneRuleSendLog`; a failed send's own row at once; mailbox and rule cascade |
+| `session` | one signed-in browser, 30 days, renewed daily | until it expires, or the user is banned, deleted or resets the password | the cron's `pruneExpiredSessions` within a minute of expiry; Better Auth on presenting an expired session; the users routes; user cascade |
 | `system_config` | the deployment's settings and generated keys, one row each | forever | nothing; settings are replaced, never removed |
 | `thread` | one conversation | Inbox and other folders: until deleted; Trash: 30 days; service mailboxes: 30 days after the newest message; Spam: until deleted | the cron's `purgeStaleTrash` and `purgeStaleServiceThreads`; the user's delete from Trash or Spam; mailbox purge |
 | `thread_folder` | a conversation filed in a folder | until unfiled | the folders route; user, thread and folder cascade |
 | `two_factor` | a user's two-factor secret | while two-factor is on | user cascade |
 | `user` | one person | until an admin deletes them | the users route marks them, and the cron's `deletePurgedUsers` drops them once they own no mailbox |
-| `user_invite` | one invitation, valid for 7 days | forever, also after use or expiry | an admin's delete; inviter cascade. Nothing removes used or expired invites (see below) |
+| `user_invite` | one invitation, valid for 7 days | used: until its 7 days end; unused: until an admin revokes it, also after expiry | the cron's `pruneUsedInvites`; an admin's delete; inviter cascade. Nothing removes expired unused invites (see below) |
 | `verification` | a password-reset or sign-in token | until used or expired | Better Auth, on use, and on the next lookup after it expires |
 
 ## R2 prefixes
@@ -58,8 +58,8 @@ Every key is built in `apps/worker/src/mail/blob-keys.ts`. Mail and attachments 
 | `raw/<mailbox>/` | received mail and sent copies, as `.eml` | its message's removal, through `deleteBlobs` |
 | `plain/<mailbox>/` | decrypted copies (PGP is off) | its message's removal |
 | `att/<message>/` | attachments | its message's removal |
-| `draft/<user>/` | uploads from the composer | deleting its draft, or the cron after a scheduled send. An upload no draft refers to stays |
-| `avatar/<user>/` | one picture per user | a new upload replaces it. Deleting the user leaves it |
+| `draft/<user>/` | uploads from the composer | deleting its draft, or the cron after a scheduled send. The cron's hourly `sweepOrphanBlobs` removes an upload no draft refers to once it is 7 days old (`ORPHAN_GRACE_MS` in `mail/orphan-blobs.ts`) |
+| `avatar/<user>/` | one picture per user | a new upload replaces it. The cron's hourly `sweepOrphanBlobs` removes a picture no user's `image` points at once it is 7 days old, which covers deleted users |
 
 There is no lifecycle rule on the bucket.
 
@@ -70,10 +70,7 @@ These stores keep rows that nothing removes. Each is small per row, but the coun
 - `thread` in Spam: never aged out, unlike Trash.
 - `draft`: abandoned drafts, and scheduled sends that failed.
 - `reminder`: fired, done and cancelled reminders.
-- `user_invite`: used and expired invites.
+- `user_invite`: expired invites that were never used. The admin still sees them in the invite list.
 - `block_request`: reviewed requests.
-- `rule_send_log`: every rule send ever made, though only recent ones are read.
-- `session`: expired sessions that are never presented again.
-- R2 `draft/` uploads that no draft refers to, and `avatar/` pictures of deleted users.
 
 Mail itself is kept until someone deletes it. That is the product's purpose, not a gap.

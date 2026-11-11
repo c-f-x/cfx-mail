@@ -5,8 +5,11 @@ import {
   mailbox,
   rateLimitCounter,
   reminder,
+  ruleSendLog,
+  session,
   thread,
   user,
+  userInvite,
 } from "@cfmail/db/schema";
 import { Perm } from "@cfmail/shared/permissions";
 import { and, asc, eq, isNotNull, isNull, lt, lte, notExists, or, sql } from "drizzle-orm";
@@ -17,8 +20,10 @@ import { broadcastToUsers } from "./hub.ts";
 import { isOwnDraftUpload } from "./mail/blob-keys.ts";
 import { collectThreadBlobKeys, deleteBlobs, deleteThreadsByIds } from "./mail/blobs.ts";
 import { checkDomainHealth } from "./mail/dns.ts";
+import { sweepOrphanBlobs } from "./mail/orphan-blobs.ts";
 import { pushToUsers } from "./mail/push.ts";
 import { buildQuote } from "./mail/quote.ts";
+import { RULE_SEND_LOG_KEEP_MS } from "./mail/rule-sends.ts";
 import { sendFromMailbox } from "./mail/send.ts";
 import { refreshTrackerList } from "./mail/trackers.ts";
 import { markMailboxPurge } from "./mailbox-purge.ts";
@@ -80,6 +85,13 @@ export async function runCron(env: Env, now: Date): Promise<void> {
   await step("purge-pending-mailboxes", () => purgePendingMailboxes(env, db));
   await step("delete-purged-users", () => deletePurgedUsers(db));
   await step("prune-rate-limit-counters", () => pruneRateLimitCounters(db, now));
+  await step("prune-expired-sessions", () => pruneExpiredSessions(db, now));
+  await step("prune-rule-send-log", () => pruneRuleSendLog(db, now));
+  await step("prune-used-invites", () => pruneUsedInvites(db, now));
+  // Listing the bucket costs R2 operations, so the sweep runs once an hour.
+  if (now.getUTCMinutes() === 0) {
+    await step("sweep-orphan-blobs", () => sweepOrphanBlobs(env, db, now));
+  }
   await step("dns-recheck", () => recheckDomains(db, now));
   await step("tracker-list", () => refreshTrackerList(db, now));
 }
@@ -170,6 +182,28 @@ async function purgeStaleServiceThreads(env: Env, db: DB, now: Date): Promise<vo
 async function pruneRateLimitCounters(db: DB, now: Date): Promise<void> {
   const cutoff = now.getTime() - 24 * 60 * 60 * 1000;
   await db.delete(rateLimitCounter).where(lt(rateLimitCounter.windowStart, cutoff));
+}
+
+// Better Auth removes an expired session only when its cookie is presented
+// again. A browser that never comes back would leave its row forever.
+async function pruneExpiredSessions(db: DB, now: Date): Promise<void> {
+  await db.delete(session).where(lt(session.expiresAt, now));
+}
+
+// Rule sends are read only within their windows (rule-sends.ts); older rows
+// change no decision.
+async function pruneRuleSendLog(db: DB, now: Date): Promise<void> {
+  const cutoff = new Date(now.getTime() - RULE_SEND_LOG_KEEP_MS);
+  await db.delete(ruleSendLog).where(lt(ruleSendLog.sentAt, cutoff));
+}
+
+// A used invite is hidden from the admin's list and only answers "already
+// used" if its link is opened again. Once the link has expired anyway, the row
+// has no use. Unused invites stay: the admin sees them until revoked.
+async function pruneUsedInvites(db: DB, now: Date): Promise<void> {
+  await db
+    .delete(userInvite)
+    .where(and(isNotNull(userInvite.usedAt), lt(userInvite.expiresAt, now)));
 }
 
 async function recheckDomains(db: DB, now: Date): Promise<void> {
