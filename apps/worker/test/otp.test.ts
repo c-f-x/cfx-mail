@@ -5,7 +5,9 @@ import type { AuthResult } from "../src/mail/spam.ts";
 
 async function mail(headers: string[], from = "noreply@example.com") {
   return parseMime(
-    [`From: ${from}`, "To: me@example.test", "Subject: Hello", ...headers, "", "Hi there"].join("\r\n"),
+    [`From: ${from}`, "To: me@example.test", "Subject: Hello", ...headers, "", "Hi there"].join(
+      "\r\n",
+    ),
   );
 }
 
