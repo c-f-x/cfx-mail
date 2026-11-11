@@ -1,8 +1,8 @@
 # AGENTS.md
 
-How an agent sets up cfmail for a domain, manages its accounts, and changes its code safely.
+How an agent sets up cfx-mail for a domain, manages its accounts, and changes its code safely.
 
-cfmail is mail on Cloudflare for one owner's projects: one Worker serves the web app, the API, inbound mail and the scheduled jobs. People read and send mail in the browser; projects send mail (sign-in links and similar) through an API key.
+cfx-mail is mail on Cloudflare for one owner's projects: one Worker serves the web app, the API, inbound mail and the scheduled jobs. People read and send mail in the browser; projects send mail (sign-in links and similar) through an API key.
 
 Read `CLAUDE.md` first for how work is done in this repo. Where `CLAUDE.md` and this file disagree, `CLAUDE.md` wins. The background is in `docs/architecture.md` (how it works), `docs/config-reference.md` (every setting and secret) and `docs/decisions.md` (why it is this way).
 
@@ -17,11 +17,11 @@ Read `CLAUDE.md` first for how work is done in this repo. Where `CLAUDE.md` and 
 
 ## 2. Deployments and the site file
 
-The repository holds no deployment values: no account id, Worker name, hostname, database or bucket id (decision D-16). Each deployment's values are a block in a private site file, `cf-mail.jsonc`, kept in a checkout whose path is in the environment variable `CFX_SITE`. `scripts/site-config.mjs` joins that block with the template `apps/worker/wrangler.jsonc` at run time, in a scratch folder the run removes. `scripts/deploy.sh`, `scripts/state.sh`, `scripts/backup.mjs` and `scripts/restore.mjs` all go through it. The format is at the top of `scripts/site-config.mjs`.
+The repository holds no deployment values: no account id, Worker name, hostname, database or bucket id (decision D-16). Each deployment's values are a block in a private site file, `cfx-mail.jsonc`, kept in a checkout whose path is in the environment variable `CFX_SITE`. `scripts/site-config.mjs` joins that block with the template `apps/worker/wrangler.jsonc` at run time, in a scratch folder the run removes. `scripts/deploy.sh`, `scripts/state.sh`, `scripts/backup.mjs` and `scripts/restore.mjs` all go through it. The format is at the top of `scripts/site-config.mjs`.
 
 `scripts/wrangler-config.test.mjs` fails when any file in the repository holds an account id, a resource id, or a hostname or email address that is not reserved (`example.com`, `.test`) or listed in `scripts/public-hosts.txt`. Use reserved names in tests and docs. Add a host to the list only for a public service the code must name. The owner's own domains are hashed in `scripts/private-values.sha256`, so they fail even if listed.
 
-The owner keeps the site file, and private notes on what exists and where each key is kept, in a private repository next to it (`cf-mail.md`).
+The owner keeps the site file, and private notes on what exists and where each key is kept, in a private repository next to it (`cfx-mail.md`).
 
 Run `CFX_SITE=<site checkout> scripts/state.sh <name>` for the live list of domains, mailboxes, service mailboxes, aliases and users. It reads names and counts only, never mail.
 
@@ -131,7 +131,7 @@ Only when a project needs its own admin (D-8). Ask the owner first. `<name>` is 
 
    Keep the `database_id` the first command prints.
 
-2. **Site file.** Add a block for `<name>` to `cf-mail.jsonc` in the site checkout, in the format at the top of `scripts/site-config.mjs`: the account id, the Worker name `mail-<name>`, the hostname `mail.<domain>`, the database name and the `database_id` from step 1, and the bucket name. Commit it in the site repository. Never put these values in this repository; `scripts/wrangler-config.test.mjs` fails on an account id, a resource id or a real hostname in any tracked file.
+2. **Site file.** Add a block for `<name>` to `cfx-mail.jsonc` in the site checkout, in the format at the top of `scripts/site-config.mjs`: the account id, the Worker name `mail-<name>`, the hostname `mail.<domain>`, the database name and the `database_id` from step 1, and the bucket name. Commit it in the site repository. Never put these values in this repository; `scripts/wrangler-config.test.mjs` fails on an account id, a resource id or a real hostname in any tracked file.
 
 3. **Dry run**, from `apps/worker`:
 

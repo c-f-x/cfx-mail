@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploy one deployment: build, apply database migrations, deploy the Worker.
 # Usage: CFX_SITE=<site checkout> pnpm run deploy <name>
-# <name> is a deployment in <CFX_SITE>/cf-mail.jsonc. Its values are joined
+# <name> is a deployment in <CFX_SITE>/cfx-mail.jsonc. Its values are joined
 # with apps/worker/wrangler.jsonc by scripts/site-config.mjs (decision D-16).
 set -euo pipefail
 
@@ -14,7 +14,7 @@ fi
 root="$(cd "$(dirname "$0")/.." && pwd)"
 
 # The joined config lives in this run's own scratch folder, removed on exit.
-scratch="$(mktemp -d "${TMPDIR:-/tmp}/cfmail-deploy.XXXXXX")"
+scratch="$(mktemp -d "${TMPDIR:-/tmp}/cfx-mail-deploy.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
 config="$(node "$root/scripts/site-config.mjs" "$name" "$scratch")"
 account="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).env[process.argv[2]].account_id)' "$config" "$name")"

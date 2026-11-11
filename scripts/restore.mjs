@@ -71,7 +71,7 @@ if (users === 0 && messages === 0) {
   // transaction ends, which covers tables that refer to each other. The file is a
   // copy of the whole database, password hashes included, so it lives in a temp
   // folder this run creates and removes, never in the backup.
-  const scratch = await mkdtemp(join(tmpdir(), "cfmail-restore-"));
+  const scratch = await mkdtemp(join(tmpdir(), "cfx-mail-restore-"));
   try {
     const sqlFile = join(scratch, "restore.sql");
     const statements = ["PRAGMA defer_foreign_keys = TRUE;"];

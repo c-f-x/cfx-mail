@@ -9,7 +9,7 @@ import { openRunScope, processStartTime, sweepDeadRuns } from "./run-scope.mjs";
 
 // This test file's own root. It is created here and removed here, so the
 // sweeps below act only on folders this file made.
-const ROOT = path.join(os.tmpdir(), `cfmail-run-scope-test-${randomUUID()}`);
+const ROOT = path.join(os.tmpdir(), `cfx-mail-run-scope-test-${randomUUID()}`);
 const BIN = path.join(ROOT, "bin");
 mkdirSync(BIN, { recursive: true });
 after(() => rmSync(ROOT, { recursive: true, force: true }));

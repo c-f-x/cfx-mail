@@ -1,10 +1,10 @@
-# cf-mail
+# cfx-mail
 
 **Mailboxes for your own domains, run on Cloudflare.** People read and send mail in the browser, at addresses on your domains. Your projects send their own mail, such as sign-in links, through an API key.
 
-cf-mail is one Cloudflare Worker with a D1 database and an R2 bucket. There is no server to run and no mail server to keep patched. Cloudflare Email Routing brings mail in and Email Sending takes it out.
+cfx-mail is one Cloudflare Worker with a D1 database and an R2 bucket. There is no server to run and no mail server to keep patched. Cloudflare Email Routing brings mail in and Email Sending takes it out.
 
-![The cf-mail inbox across several accounts, with a conversation open. The mail is made up.](docs/images/cf-mail.png)
+![The cfx-mail inbox across several accounts, with a conversation open. The mail is made up.](docs/images/cfx-mail.png)
 
 A project sends mail with one request:
 
@@ -43,7 +43,7 @@ The key belongs to a service mailbox, which an admin makes in the app. The mail 
 You need a Cloudflare account on the Workers Paid plan, and a domain on Cloudflare with Email Routing and Email Sending turned on.
 
 1. Create a D1 database and an R2 bucket for the deployment.
-2. Write the deployment's values into a site file, `cf-mail.jsonc`, in a folder of your own outside this repository. The format is at the top of `scripts/site-config.mjs`.
+2. Write the deployment's values into a site file, `cfx-mail.jsonc`, in a folder of your own outside this repository. The format is at the top of `scripts/site-config.mjs`.
 3. Set three Worker secrets: `AUTH_SECRET`, and the client id and secret of a Cloudflare OAuth app for admin sign-in.
 4. Deploy, with `CFX_SITE` pointing at the folder that holds the site file:
 
@@ -109,7 +109,7 @@ docs/             how it works and why
 
 ## Credits
 
-cf-mail began as a copy of [cloudflare-mail](https://github.com/Newspicel/cloudflare-mail) by Julian Haag, under the MIT licence. Its history up to the copy is kept in this repository, so his work stays under his name.
+cfx-mail began as a copy of [cloudflare-mail](https://github.com/Newspicel/cloudflare-mail) by Julian Haag, under the MIT licence. Its history up to the copy is kept in this repository, so his work stays under his name.
 
 Each deployment downloads two community tracker lists once a day to find tracking pixels. They are not part of this repository, and their own licences apply:
 

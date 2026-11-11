@@ -13,7 +13,7 @@ set -euo pipefail
 umask 077
 
 fail() {
-  echo "cfmail backup FAILED ($(date '+%Y-%m-%d %H:%M:%S')): $*" >&2
+  echo "cfx-mail backup FAILED ($(date '+%Y-%m-%d %H:%M:%S')): $*" >&2
   exit 1
 }
 
@@ -45,7 +45,7 @@ node "$retention" prune "$root" "$keep" >/dev/null ||
   fail "keep must be a whole number of 1 or more (got '$keep')."
 
 cd "$repo"
-echo "cfmail backup: $name -> $root/current"
+echo "cfx-mail backup: $name -> $root/current"
 "${pnpm_cmd[@]}" run backup "$name" "$root/current" ||
   fail "'run backup $name' ended with an error. The dated copies are untouched."
 
@@ -57,10 +57,10 @@ cp -cR "$root/current" "$partial" ||
   fail "could not copy $root/current to $partial (the backup folder must be on APFS)."
 [ -e "$root/$today" ] && trash "$root/$today"
 mv "$partial" "$root/$today" || fail "could not move $partial to $root/$today."
-echo "cfmail backup: saved $root/$today"
+echo "cfx-mail backup: saved $root/$today"
 
 while IFS= read -r old; do
   [ -n "$old" ] || continue
   trash "$root/$old" || fail "could not move $root/$old to the Trash."
-  echo "cfmail backup: moved $root/$old to the Trash"
+  echo "cfx-mail backup: moved $root/$old to the Trash"
 done < <(node "$retention" prune "$root" "$keep")

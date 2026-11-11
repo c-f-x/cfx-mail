@@ -8,7 +8,7 @@ Only the newest commit on `master` is supported. A fix lands there, and the repo
 
 ## What matters most
 
-cf-mail holds other people's mail, so these come first:
+cfx-mail holds other people's mail, so these come first:
 
 - reading or changing a mailbox you were not given access to;
 - signing in as someone else, or as an admin;

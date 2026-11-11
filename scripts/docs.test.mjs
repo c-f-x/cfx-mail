@@ -45,7 +45,7 @@ test("the path check flags missing paths and stale planned marks", () => {
     "See `docs/architecture.md` and `apps/worker/src/gone.ts`.",
     "Later: `apps/web/src/features/` (planned), and again `apps/web/src/features/`.",
     "Stale: `docs/decisions.md` (planned).",
-    "Not paths: `/api/health`, `mail-<name>`, `cf-kit:docs/conventions.md`, `$scratch`, `wrangler.jsonc`, `@cfmail/db`, `typescript/no-floating-promises`, `~/cfmail-backups`.",
+    "Not paths: `/api/health`, `mail-<name>`, `cfx-kit:docs/conventions.md`, `$scratch`, `wrangler.jsonc`, `@cfmail/db`, `typescript/no-floating-promises`, `~/cfx-mail-backups`.",
     "With a line number: `docs/code-structure.md:12`.",
   ].join("\n");
   const existing = new Set(["docs/architecture.md", "docs/decisions.md", "docs/code-structure.md"]);

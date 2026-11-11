@@ -2,7 +2,7 @@
 // Fill a LOCAL worker with realistic, fictional mail for performance work.
 //
 //   node scripts/seed-local.mjs [--base http://localhost:8797] [--messages 5000]
-//     [--concurrency 6] [--out /tmp/cfmail-seed.json]
+//     [--concurrency 6] [--out /tmp/cfx-mail-seed.json]
 //
 // The setup token is read from SETUP_TOKEN in apps/worker/.dev.vars, the file
 // the local worker reads it from.
@@ -32,7 +32,7 @@ const { values: args } = parseArgs({
     base: { type: "string", default: "http://localhost:8797" },
     messages: { type: "string", default: "5000" },
     concurrency: { type: "string", default: "6" },
-    out: { type: "string", default: "/tmp/cfmail-seed.json" },
+    out: { type: "string", default: "/tmp/cfx-mail-seed.json" },
   },
 });
 

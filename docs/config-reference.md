@@ -1,6 +1,6 @@
 # Configuration reference
 
-Every input that changes how cfmail runs, where it is set, who reads it and what happens without it. Paths are relative to the repository root unless they start with a folder inside `apps/worker/src/`. For how the parts fit together, see [`architecture.md`](./architecture.md). For the steps of a deployment, see [`AGENTS.md`](../AGENTS.md), sections 3 and 4.
+Every input that changes how cfx-mail runs, where it is set, who reads it and what happens without it. Paths are relative to the repository root unless they start with a folder inside `apps/worker/src/`. For how the parts fit together, see [`architecture.md`](./architecture.md). For the steps of a deployment, see [`AGENTS.md`](../AGENTS.md), sections 3 and 4.
 
 There are five places configuration lives:
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Show what the shared cfmail deployment holds: domains, mailboxes, service
+# Show what the shared cfx-mail deployment holds: domains, mailboxes, service
 # mailboxes, aliases and users. Read-only, names and counts only; it never
 # reads anyone's mail. Usage: CFX_SITE=<site checkout> scripts/state.sh <deployment>
 # The deployment's values come from the private site file (decision D-16).
@@ -12,7 +12,7 @@ wrangler="$repo/apps/worker/node_modules/.bin/wrangler"
 [ -x "$wrangler" ] || { echo "No wrangler at $wrangler. Run 'npx -y pnpm@12.4.1 install' in $repo first." >&2; exit 1; }
 
 # The joined config lives in this run's own scratch folder, removed on exit.
-scratch="$(mktemp -d "${TMPDIR:-/tmp}/cfmail-state.XXXXXX")"
+scratch="$(mktemp -d "${TMPDIR:-/tmp}/cfx-mail-state.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
 config="$(node "$repo/scripts/site-config.mjs" "$env" "$scratch")"
 CLOUDFLARE_ACCOUNT_ID="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).env[process.argv[2]].account_id)' "$config" "$env")"

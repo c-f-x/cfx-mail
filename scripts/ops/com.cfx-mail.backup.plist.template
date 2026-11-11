@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Daily backup of one cfmail deployment. A template: nothing here is installed.
+  Daily backup of one cfx-mail deployment. A template: nothing here is installed.
   Fill the placeholders, save the result as
-  ~/Library/LaunchAgents/com.cfmail.backup.<name>.plist, and follow
+  ~/Library/LaunchAgents/com.cfx-mail.backup.<name>.plist, and follow
   docs/runbooks/backup-and-restore.md ("Run it every day").
 
   __NAME__        the deployment's name in the site file (AGENTS.md, section 2)
   __REPO__        absolute path of this repository's checkout
-  __SITE__        absolute path of the site checkout that holds cf-mail.jsonc
+  __SITE__        absolute path of the site checkout that holds cfx-mail.jsonc
   __BACKUP_ROOT__ absolute path of the folder that holds the backups
   __KEEP__        how many dated copies to keep, for example 14
   __HOUR__        hour to run, 0 to 23, local time
@@ -19,7 +19,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.cfmail.backup.__NAME__</string>
+  <string>com.cfx-mail.backup.__NAME__</string>
 
   <key>ProgramArguments</key>
   <array>
@@ -46,8 +46,8 @@
   </dict>
 
   <key>StandardOutPath</key>
-  <string>__LOG_DIR__/cfmail-backup-__NAME__.log</string>
+  <string>__LOG_DIR__/cfx-mail-backup-__NAME__.log</string>
   <key>StandardErrorPath</key>
-  <string>__LOG_DIR__/cfmail-backup-__NAME__.log</string>
+  <string>__LOG_DIR__/cfx-mail-backup-__NAME__.log</string>
 </dict>
 </plist>
