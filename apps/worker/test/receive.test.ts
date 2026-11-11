@@ -340,6 +340,51 @@ describe("handleInbound — redirects", () => {
     expect(await db.query.thread.findMany()).toHaveLength(0);
     expect(await blobKeys("raw/")).toEqual([]);
   });
+
+  describe("the domain catch-all", () => {
+    beforeEach(async () => {
+      await db.insert(redirect).values({
+        id: "redirect-catch-all",
+        domainId: DOMAIN_ID,
+        localPart: "*",
+        targetMailboxId: TARGET_ID,
+      });
+    });
+
+    it("takes mail for an address nothing else receives", async () => {
+      const msg = stubInbound({ from: "someone@elsewhere.com", to: "anyone@example.com" });
+      await handleInbound(msg, e);
+
+      expect(msg.rejected).toBeUndefined();
+      const rows = await db.query.message.findMany({ where: eq(message.mailboxId, TARGET_ID) });
+      expect(rows.map((r) => r.deliveredTo)).toEqual(["anyone@example.com"]);
+    });
+
+    // Replies to a no-reply address are bounces, auto-replies and mistakes.
+    it.each(["noreply", "no-reply", "No_Reply", "do-not-reply", "donotreply", "noreply+tag"])(
+      "bounces mail for %s@ instead of catching it",
+      async (local) => {
+        const msg = stubInbound({ from: "someone@elsewhere.com", to: `${local}@example.com` });
+        await handleInbound(msg, e);
+
+        expect(msg.rejected).toBe("Address not found");
+        expect(await db.query.message.findMany()).toHaveLength(0);
+      },
+    );
+
+    it("still delivers a no-reply address someone set up on purpose", async () => {
+      await db.insert(redirect).values({
+        id: "redirect-noreply",
+        domainId: DOMAIN_ID,
+        localPart: "noreply",
+        targetMailboxId: TARGET_ID,
+      });
+      const msg = stubInbound({ from: "someone@elsewhere.com", to: "noreply@example.com" });
+      await handleInbound(msg, e);
+
+      expect(msg.rejected).toBeUndefined();
+    });
+  });
 });
 
 describe("handleInbound — storage is all-or-nothing", () => {
@@ -1006,11 +1051,12 @@ describe("handleInbound — Spamhaus DQS", () => {
         `From: <${from}>\r\nTo: <${ADDRESS}>\r\nSubject: hi\r\n\r\nbody\r\n`,
     });
 
+  // Only mail that fails DMARC is refused for a listed sender domain.
   it("rejects a DBL-listed sender without storing the message", async () => {
-    await enableDqs({ "dbl-dqs.blt.spamhaus.net/dbl": ["127.0.1.2"] });
-    const msg = listedMail("test@dbl-dqs.blt.spamhaus.net");
+    await enableDqs({ "listed.test/dbl": ["127.0.1.2"] });
+    const msg = listedMail("someone@listed.test", "fail");
     await handleInbound(msg, e);
-    expect(msg.rejected).toMatch(/dbl-dqs\.blt\.spamhaus\.net is listed by Spamhaus \(DBL\)/);
+    expect(msg.rejected).toMatch(/listed\.test is listed by Spamhaus \(DBL\)/);
     expect(await db.query.message.findMany({ where: eq(message.mailboxId, MAILBOX_ID) })).toEqual(
       [],
     );
