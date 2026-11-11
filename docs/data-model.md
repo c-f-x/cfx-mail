@@ -59,7 +59,7 @@ Every key is built in `apps/worker/src/mail/blob-keys.ts`. Mail and attachments 
 | `plain/<mailbox>/` | decrypted copies (PGP is off) | its message's removal |
 | `att/<message>/` | attachments | its message's removal |
 | `draft/<user>/` | uploads from the composer | deleting its draft, or the cron after a scheduled send. The cron's hourly `sweepOrphanBlobs` removes an upload no draft refers to once it is 7 days old (`ORPHAN_GRACE_MS` in `mail/orphan-blobs.ts`) |
-| `avatar/<user>/` | one picture per user | a new upload replaces it. The cron's hourly `sweepOrphanBlobs` removes a picture no user's `image` points at once it is 7 days old, which covers deleted users |
+| `avatar/<user>/` | the picture a user shows, and for up to 7 days any upload it did not keep | the cron's hourly `sweepOrphanBlobs` removes a picture no user's `image` points at once it is 7 days old: a replaced picture, an upload never saved, a deleted user's |
 
 There is no lifecycle rule on the bucket.
 

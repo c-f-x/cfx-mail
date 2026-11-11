@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { AppBindings } from "../env.ts";
-import { avatarKey, avatarPrefix } from "../mail/blob-keys.ts";
+import { avatarKey } from "../mail/blob-keys.ts";
 import { requireUser } from "../middleware.ts";
 
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
@@ -39,10 +39,9 @@ export function avatarRoutes() {
       if (!body.byteLength) throw new HTTPException(400, { message: "empty" });
       if (body.byteLength > MAX_BYTES) throw new HTTPException(413, { message: "too large" });
 
-      // One avatar per user — drop any prior blobs before writing the new one.
-      const old = await c.env.BLOBS.list({ prefix: avatarPrefix(user.id) });
-      await Promise.all(old.objects.map((o) => c.env.BLOBS.delete(o.key)));
-
+      // The current picture stays: the profile points at the new one only
+      // once it is saved. The cron's orphan sweep (mail/orphan-blobs.ts)
+      // removes a picture no profile points at.
       const id = crypto.randomUUID();
       await c.env.BLOBS.put(avatarKey(user.id, id), body, { httpMetadata: { contentType } });
       return c.json({ url: `/api/avatar/${user.id}/${id}` });
