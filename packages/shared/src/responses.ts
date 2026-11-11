@@ -43,9 +43,7 @@ export type Serialized<T> = {
 // `subject` is the subject of the thread's first message as it was sent, the
 // line to show. The stored `subjectNorm` is lowercased and stripped of "Re:",
 // for matching replies.
-export type ThreadDto = Serialized<Omit<typeof thread.$inferSelect, "listId">> & {
-  subject: string;
-};
+export type ThreadDto = Serialized<Omit<typeof thread.$inferSelect, "listId">>;
 // The stored correspondent key matching a message's sender, attached by the
 // thread-detail route so the reader can show which key verified a signature and
 // whether the owner has confirmed it out-of-band.
@@ -80,6 +78,9 @@ export type MessageDto = Pick<
   | "spamReasons"
   | "spamAuth"
   | "listUnsubscribe"
+  | "autoReply"
+  | "otpCode"
+  | "otpOrigin"
   | "pgpEncrypted"
   | "pgpSigned"
   | "pgpVerify"

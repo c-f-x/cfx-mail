@@ -11,7 +11,7 @@ import { wrapUnique } from "../errors.ts";
 import { requireUser } from "../middleware.ts";
 import { accessibleMailboxIds, requirePerm } from "../permissions.ts";
 import { cursorBefore, decodeCursor, nextCursor, pageLimit } from "./pagination.ts";
-import { firstMessageSubject, serializeThread } from "./serialize.ts";
+import { serializeThread } from "./serialize.ts";
 import { buildPatch, typedQuery } from "./util.ts";
 import { zValidator } from "./validate.ts";
 
@@ -135,10 +135,8 @@ export function foldersRoutes() {
 
       const limit = pageLimit(c.req.query("limit"));
       const cursor = decodeCursor(c.req.query("cursor"));
-      const order = [desc(thread.lastMsgAt), desc(thread.id)];
-      // The page is chosen first, so the subject is looked up for its rows only.
-      const page = db
-        .select({ id: thread.id })
+      const rows = await db
+        .select({ thread })
         .from(thread)
         .innerJoin(threadFolder, eq(threadFolder.threadId, thread.id))
         .where(
@@ -151,16 +149,11 @@ export function foldersRoutes() {
             cursorBefore(cursor, thread.lastMsgAt, thread.id),
           ),
         )
-        .orderBy(...order)
+        .orderBy(desc(thread.lastMsgAt), desc(thread.id))
         .limit(limit);
-      const rows = await db
-        .select({ thread, subject: firstMessageSubject })
-        .from(thread)
-        .where(inArray(thread.id, page))
-        .orderBy(...order);
 
       return c.json({
-        threads: rows.map((row) => serializeThread(row.thread, row.subject)),
+        threads: rows.map((row) => serializeThread(row.thread)),
         nextCursor: nextCursor(rows, limit, (row) => ({
           ts: row.thread.lastMsgAt,
           id: row.thread.id,

@@ -1,3 +1,4 @@
+import { isAutoReplySubject } from "@cfx-mail/shared/subject";
 import { createMimeMessage, Mailbox } from "mimetext";
 import PostalMime, { type Email as ParsedEmail } from "postal-mime";
 import {
@@ -70,6 +71,23 @@ export function extractListId(parsed: ParsedEmail): string | null {
   if (!value) return null;
   const id = (/<([^<>]+)>/.exec(value)?.[1] ?? value).trim().toLowerCase();
   return id || null;
+}
+
+// Whether a vacation/out-of-office responder sent this. RFC 3834's
+// `Auto-Submitted: auto-replied` and the older X-Autoreply family say so
+// outright; Exchange marks its responder only `auto-generated` (which plain
+// notifications use too), so a responder subject prefix decides the rest.
+export function isAutoReply(parsed: ParsedEmail): boolean {
+  const headers = parsed.headers ?? [];
+  const get = (name: string) =>
+    headers
+      .find((h) => h.key.toLowerCase() === name)
+      ?.value?.trim()
+      .toLowerCase() ?? null;
+  if (get("auto-submitted")?.startsWith("auto-replied")) return true;
+  if (get("x-autoreply") || get("x-autorespond") || get("x-autoresponse")) return true;
+  if (get("precedence") === "auto_reply") return true;
+  return isAutoReplySubject(parsed.subject ?? "");
 }
 
 export interface ThreadingHeaders {
@@ -170,13 +188,6 @@ function uint8ToBase64(bytes: Uint8Array): string {
   let bin = "";
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin);
-}
-
-export function normalizeSubject(subject: string): string {
-  return subject
-    .trim()
-    .replace(/^(?:(?:re|fwd?|aw|wg)\s*:\s*)+/i, "")
-    .toLowerCase();
 }
 
 export function snippet(body: string, len = 180): string {

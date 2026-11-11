@@ -1,14 +1,10 @@
 import type { DB } from "@cfx-mail/db";
 import { message, thread } from "@cfx-mail/db/schema";
 import { Flag } from "@cfx-mail/shared/flags";
+import { normalizeSubject, REPLY_PREFIX } from "@cfx-mail/shared/subject";
 import { and, count, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import type { SQLiteUpdateSetSource } from "drizzle-orm/sqlite-core";
 import { chunk, SQL_VARS_LIMIT } from "../lib/sql.ts";
-import { normalizeSubject } from "./mime.ts";
-
-// Same prefixes normalizeSubject strips — used to tell a reply ("Re: X") from a
-// bare first-contact message whose subject merely happens to collide.
-const REPLY_PREFIX = /^\s*(?:(?:re|fwd?|aw|wg)\s*:\s*)+/i;
 
 const SUBJECT_WINDOW_SECONDS = 60 * 60 * 24 * 7;
 // In-Reply-To/References are attacker-controlled, so a header match into an
@@ -19,6 +15,8 @@ const HEADER_MATCH_WINDOW_SECONDS = 60 * 60 * 24 * 180;
 export interface ResolveThreadInput {
   mailboxId: string;
   subject: string;
+  // An out-of-office reply: joins its thread but never names it.
+  autoReply?: boolean;
   inReplyTo?: string | null;
   references?: string[] | null;
   participants: { name?: string; address: string }[];
@@ -101,7 +99,7 @@ export async function resolveThreadId(
     }
   }
 
-  const norm = normalizeSubject(input.subject);
+  const norm = input.autoReply ? "" : normalizeSubject(input.subject);
   // When we have a header chain, derive a deterministic thread id from the
   // chain root. Two concurrent inbounds with the same parent then collide on
   // the same id instead of each inserting a fresh random-UUID thread. This only
@@ -176,6 +174,14 @@ export async function resolveThreadId(
   return insertThread(db, input);
 }
 
+// A new thread's subject as people wrote it, and its matching key. An
+// out-of-office reply that starts a thread leaves both empty, so the first
+// real reply names it.
+function threadSubjectValues(input: ResolveThreadInput): { subject: string; subjectNorm: string } {
+  if (input.autoReply) return { subject: "", subjectNorm: "" };
+  return { subject: input.subject.trim(), subjectNorm: normalizeSubject(input.subject) };
+}
+
 // Create the thread row under a derived id, or find it already there. Returns
 // whether this call created it.
 async function insertKeyedThread(db: DB, id: string, input: ResolveThreadInput): Promise<boolean> {
@@ -184,7 +190,7 @@ async function insertKeyedThread(db: DB, id: string, input: ResolveThreadInput):
     .values({
       id,
       mailboxId: input.mailboxId,
-      subjectNorm: normalizeSubject(input.subject),
+      ...threadSubjectValues(input),
       lastMsgAt: new Date(),
       msgCount: 0,
       participants: input.participants,
@@ -201,7 +207,7 @@ async function insertThread(db: DB, input: ResolveThreadInput): Promise<ResolveT
   await db.insert(thread).values({
     id,
     mailboxId: input.mailboxId,
-    subjectNorm: normalizeSubject(input.subject),
+    ...threadSubjectValues(input),
     lastMsgAt: new Date(),
     msgCount: 0,
     participants: input.participants,
@@ -310,8 +316,9 @@ export async function bumpThread(
   newParticipants: { name?: string; address: string }[],
   unreadDelta: number,
   untrash = false,
+  subject = "",
 ): Promise<void> {
-  const values = threadBumpValues(at, newParticipants, unreadDelta, untrash);
+  const values = threadBumpValues(at, newParticipants, unreadDelta, untrash, subject);
   await db.update(thread).set(values).where(eq(thread.id, threadId));
 }
 
@@ -333,6 +340,11 @@ export function threadBumpValues(
   // conversation would stay buried in Trash. Off for historical import, which
   // must not resurrect previously-trashed threads on re-import.
   untrash = false,
+  // The new message's subject. A conversation that started without a subject
+  // takes the first one a later message brings, so it stops listing as
+  // "(no subject)". One that already has a subject keeps it. Callers pass ""
+  // for an out-of-office reply, which never names a conversation.
+  subject = "",
 ): SQLiteUpdateSetSource<typeof thread> {
   const seen = new Set<string>();
   const incoming = newParticipants.filter((p) => {
@@ -343,6 +355,8 @@ export function threadBumpValues(
   });
   const added = sql.param(incoming, thread.participants);
   const when = sql.param(at, thread.lastMsgAt);
+  const named = subject.trim();
+  const unnamed = sql`${thread.subject} = ''`;
   return {
     // A thread row is created stamped with the current time. Its first message
     // sets the real time, which for an import lies in the past; after that the
@@ -369,5 +383,11 @@ export function threadBumpValues(
         }
       : {}),
     ...(untrash ? { trashed: false, trashedAt: null } : {}),
+    ...(named
+      ? {
+          subject: sql`case when ${unnamed} then ${named} else ${thread.subject} end`,
+          subjectNorm: sql`case when ${unnamed} then ${normalizeSubject(named)} else ${thread.subjectNorm} end`,
+        }
+      : {}),
   };
 }

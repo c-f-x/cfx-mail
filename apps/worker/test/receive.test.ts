@@ -844,6 +844,51 @@ describe("handleInbound — spam filtering (default standard level)", () => {
   });
 });
 
+describe("handleInbound — one-time codes", () => {
+  const SENDER = "noreply@login.elsewhere.com";
+
+  function codeMail(dmarc: string, otpToken: string | null): string {
+    const lines = [
+      `From: Login <${SENDER}>`,
+      `To: Me <${ADDRESS}>`,
+      `Authentication-Results: mx.cloudflare.net; spf=pass; dkim=pass; dmarc=${dmarc}`,
+      "Subject: Your sign-in code",
+    ];
+    if (otpToken) lines.push(`OTP-Token: ${otpToken}`);
+    lines.push("", "Your verification code is:", "", "482913", "", "It expires in 10 minutes.", "");
+    return lines.join("\r\n");
+  }
+
+  async function deliver(raw: string) {
+    await handleInbound(stubInbound({ from: SENDER, to: ADDRESS, raw }), e);
+    return (await db.query.message.findMany({ where: eq(message.mailboxId, MAILBOX_ID) }))[0]!;
+  }
+
+  it("stores the code from the body, for the sender's domain", async () => {
+    const row = await deliver(codeMail("pass", null));
+    expect(row).toMatchObject({
+      otpCode: "482913",
+      otpDomain: "elsewhere.com",
+      otpOrigin: null,
+    });
+  });
+
+  it("binds the code to the site an authenticated OTP-Token header names", async () => {
+    const row = await deliver(codeMail("pass", '"482913"; origin="https://auth.elsewhere.com"'));
+    expect(row).toMatchObject({
+      otpCode: "482913",
+      otpDomain: "auth.elsewhere.com",
+      otpOrigin: "https://auth.elsewhere.com",
+    });
+  });
+
+  it("does not let mail that fails DMARC bind a code to a site", async () => {
+    const row = await deliver(codeMail("fail", '"999111"; origin="https://auth.elsewhere.com"'));
+    expect(row.otpCode).toBe("482913");
+    expect(row.otpOrigin).toBeNull();
+  });
+});
+
 describe("handleInbound — concurrent delivery", () => {
   it("counts every message when four replies to one thread arrive at once", async () => {
     const reply = (n: number) =>
@@ -1011,6 +1056,72 @@ describe("handleInbound — a conversation only its participants can extend", ()
     const original = (await threadOf(invoice))!;
     expect(original.spam).toBe(false);
     expect(original.msgCount).toBe(2);
+  });
+
+  it("names a conversation that started without a subject after the first reply that has one", async () => {
+    await deliver(
+      ALICE,
+      eml({ from: ALICE, auth: PASS, subject: "", headers: [`Message-ID: ${INVOICE_ID}`] }),
+    );
+    const started = (
+      await db.query.thread.findMany({ where: eq(thread.mailboxId, MAILBOX_ID) })
+    )[0]!;
+    expect(started.subjectNorm).toBe("");
+
+    for (const [id, subject] of [
+      ["<reply-1@partner.test>", "Re: Invoice 4411"],
+      ["<reply-2@partner.test>", "Re: Something else"],
+    ] as const) {
+      // eslint-disable-next-line no-await-in-loop -- replies arrive one after the other
+      await deliver(
+        ALICE,
+        eml({
+          from: ALICE,
+          auth: PASS,
+          subject,
+          headers: [`Message-ID: ${id}`, `In-Reply-To: ${INVOICE_ID}`],
+        }),
+      );
+    }
+
+    const named = (await threadOf(started.id))!;
+    expect(named.msgCount).toBe(3);
+    expect(named.subject).toBe("Re: Invoice 4411");
+    expect(named.subjectNorm).toBe("invoice 4411");
+  });
+
+  it("stores a new conversation's subject as written", async () => {
+    const invoice = await seedInvoice();
+    expect((await threadOf(invoice))!.subject).toBe("Invoice 4411");
+  });
+
+  it("marks an out-of-office reply, which joins the conversation but never names it", async () => {
+    await deliver(
+      ALICE,
+      eml({ from: ALICE, auth: PASS, subject: "", headers: [`Message-ID: ${INVOICE_ID}`] }),
+    );
+    await deliver(
+      ALICE,
+      eml({
+        from: ALICE,
+        auth: PASS,
+        subject: "Automatic reply: Invoice 4411",
+        headers: [
+          `Message-ID: <ooo@partner.test>`,
+          `In-Reply-To: ${INVOICE_ID}`,
+          "Auto-Submitted: auto-replied",
+        ],
+      }),
+    );
+
+    const ooo = await messageFrom(ALICE, "Automatic reply: Invoice 4411");
+    expect(ooo.autoReply).toBe(true);
+    const th = (await threadOf(ooo.threadId))!;
+    expect(th.msgCount).toBe(2);
+    expect(th.subject).toBe("");
+    expect(th.subjectNorm).toBe("");
+    const first = await messageFrom(ALICE, "");
+    expect(first.autoReply).toBe(false);
   });
 });
 

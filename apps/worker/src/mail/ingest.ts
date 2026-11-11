@@ -12,11 +12,13 @@ import {
   bodyForIndex,
   extractListId,
   extractUnsubscribe,
+  isAutoReply,
   type ParsedEmail,
   parseMime,
   snippet,
 } from "./mime.ts";
-import type { AuthResult, SpamEvaluation } from "./spam.ts";
+import { extractOtp } from "./otp.ts";
+import { type AuthResult, parseAuthResults, type SpamEvaluation } from "./spam.ts";
 import { resolveThreadId, threadBumpValues } from "./threads.ts";
 
 export const MAX_EMAIL_BYTES = 25 * 1024 * 1024;
@@ -193,9 +195,11 @@ async function store(
   const references = parsed.references ? splitMessageIds(parsed.references) : null;
   const inReplyTo = parsed.inReplyTo ? (splitMessageIds(parsed.inReplyTo)[0] ?? null) : null;
   const at = opts.receivedAt ?? opts.sentAt ?? new Date();
+  const autoReply = opts.direction === "in" && isAutoReply(parsed);
   const { threadId, joinedByHeader, created } = await resolveThreadId(db, {
     mailboxId,
     subject: parsed.subject ?? "",
+    autoReply,
     inReplyTo,
     references,
     participants,
@@ -227,10 +231,21 @@ async function store(
 
   const bodyIndex = bodyForIndex(parsed.text, parsed.html);
   const unsub = extractUnsubscribe(parsed);
+  const otp =
+    opts.direction === "in"
+      ? extractOtp(parsed, spam?.auth ?? parseAuthResults(parsed), bodyIndex)
+      : null;
 
   // Unread badge only moves for inbound mail that arrives unseen.
   const unreadDelta = opts.direction === "in" && !(opts.flags & Flag.SEEN) ? 1 : 0;
-  const bump = threadBumpValues(at, participants, unreadDelta, !!opts.live);
+  // An out-of-office reply joins its thread but never names it.
+  const bump = threadBumpValues(
+    at,
+    participants,
+    unreadDelta,
+    !!opts.live,
+    autoReply ? "" : (parsed.subject ?? ""),
+  );
 
   const insertMessage = db.insert(message).values({
     id: messageId,
@@ -247,6 +262,7 @@ async function store(
     ccAddrs: ccAddrs.length ? ccAddrs : null,
     bccAddrs: null,
     subject: parsed.subject ?? "",
+    autoReply,
     snippet: snippet(bodyIndex),
     bodyText: bodyIndex,
     toText: addrsToText([...toAddrs, ...ccAddrs]),
@@ -261,6 +277,9 @@ async function store(
     spamAuth: spam ? spam.auth : null,
     listUnsubscribe: unsub.listUnsubscribe,
     listUnsubscribePost: unsub.listUnsubscribePost,
+    otpCode: otp?.code ?? null,
+    otpDomain: otp?.domain ?? null,
+    otpOrigin: otp?.origin ?? null,
     pgpEncrypted: opts.pgp?.encrypted ?? false,
     pgpSigned: opts.pgp?.signed ?? false,
     pgpVerify: opts.pgp?.verify ?? null,

@@ -391,6 +391,9 @@ export const thread = sqliteTable(
     mailboxId: text("mailbox_id")
       .notNull()
       .references(() => mailbox.id, { onDelete: "cascade" }),
+    // The conversation's subject as people wrote it: the first non-automatic
+    // message that had one. `subjectNorm` is its matching key.
+    subject: text("subject").notNull().default(""),
     subjectNorm: text("subject_norm").notNull().default(""),
     lastMsgAt: integer("last_msg_at", { mode: "timestamp" }).notNull().default(now),
     msgCount: integer("msg_count").notNull().default(0),
@@ -442,6 +445,9 @@ export const message = sqliteTable(
     ccAddrs: text("cc_addrs", { mode: "json" }).$type<{ name?: string; address: string }[]>(),
     bccAddrs: text("bcc_addrs", { mode: "json" }).$type<{ name?: string; address: string }[]>(),
     subject: text("subject").notNull().default(""),
+    // A vacation/out-of-office responder wrote it, not a person. Such replies
+    // never stand in for a conversation (where it opens, its subject).
+    autoReply: integer("auto_reply", { mode: "boolean" }).notNull().default(false),
     snippet: text("snippet").notNull().default(""),
     // Full plaintext body (HTML normalized to text), capped, for FTS body search.
     // Null on pre-migration rows; the raw message always lives in R2.
@@ -471,6 +477,12 @@ export const message = sqliteTable(
     // the sender as supporting one-click POST unsubscribe.
     listUnsubscribe: text("list_unsubscribe"),
     listUnsubscribePost: text("list_unsubscribe_post"),
+    // One-time code found at delivery (mail/otp.ts), inbound only. `otpDomain`
+    // is the site it's for; `otpOrigin` is set only when an authenticated
+    // `OTP-Token` header (draft-goto-otp-token) bound it, not a body guess.
+    otpCode: text("otp_code"),
+    otpDomain: text("otp_domain"),
+    otpOrigin: text("otp_origin"),
     // Gateway PGP (invariant 7). Inbound: whether the message arrived encrypted/
     // signed and the signature outcome (verify/signedBy). Outbound: whether we
     // signed/encrypted it. `plainR2Key` points at the decrypted .eml for inbound

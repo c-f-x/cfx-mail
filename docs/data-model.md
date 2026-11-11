@@ -29,7 +29,7 @@ Facts were read from the code on 2026-11-11. "The cron" is `apps/worker/src/cron
 | `mailbox` | one address | personal, group and service: until deleted; temporary: until it expires | the cron's `expireTempMailboxes` marks expired ones, a delete marks the rest, and `purgePendingMailboxes` drops them with their mail |
 | `mailbox_member` | one person's access to a mailbox | until removed | a manager's removal, owner handover; mailbox and user cascade |
 | `mailbox_notify` | a person's notification level for a mailbox | until set to none | the push route; mailbox and user cascade |
-| `message` | one stored email | while its thread exists | thread cascade; deleting one message from Trash or Spam |
+| `message` | one stored email, with the one-time code found in it at delivery | while its thread exists | thread cascade; deleting one message from Trash or Spam |
 | `message_fts` | the search index, one row per message | while its message exists | the `message_fts_ad` trigger on every message delete |
 | `message_label` | a label on a message | until removed | the labels route; message and label cascade |
 | `passkey` | one passkey | until removed | Better Auth's passkey routes; user cascade |
