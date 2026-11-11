@@ -1,0 +1,6 @@
+# Gitignored files Conductor copies into each new local workspace. This file
+# replaces Conductor's default (.env*), so that pattern is listed here too.
+.env*
+!.env.example
+apps/worker/.dev.vars
+.context/**

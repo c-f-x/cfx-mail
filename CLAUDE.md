@@ -6,6 +6,7 @@ Read `AGENTS.md` for upstream's invariants and the migration workflow. Where thi
 
 ## Start here
 
+- `.context/` (gitignored, copied into new workspaces by `.worktreeinclude`) holds private notes for the agent working here, such as the latest handover. Read it first if it exists.
 - `docs/decisions.md`: decisions already made. Check it before asking the owner.
 - `docs/architecture.md`: how the system works, its binding principles and what enforces each.
 - `docs/data-model.md`: what each store keeps, for how long, and what removes it. A new table or binding needs a row there (`scripts/lifetimes.test.mjs`).
