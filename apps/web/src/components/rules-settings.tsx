@@ -5,8 +5,8 @@ import type {
   RuleConditionMode,
   RuleField,
   RuleOp,
-} from "@cfmail/shared";
-import { RULE_ACTION_TYPES, RULE_CONDITION_MODES, RULE_FIELDS, RULE_OPS } from "@cfmail/shared";
+} from "@cfx-mail/shared";
+import { RULE_ACTION_TYPES, RULE_CONDITION_MODES, RULE_FIELDS, RULE_OPS } from "@cfx-mail/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Copy, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useState } from "react";

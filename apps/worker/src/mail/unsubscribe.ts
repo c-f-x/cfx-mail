@@ -4,9 +4,9 @@
 // from the mailbox, or — failing both — an https page handed back for the client
 // to open (many are confirmation pages that can't be safely auto-submitted).
 
-import type { DB } from "@cfmail/db";
-import { domain, mailbox } from "@cfmail/db/schema";
-import type { UnsubscribeResultDto, UnsubscribeTargetDto } from "@cfmail/shared/responses";
+import type { DB } from "@cfx-mail/db";
+import { domain, mailbox } from "@cfx-mail/db/schema";
+import type { UnsubscribeResultDto, UnsubscribeTargetDto } from "@cfx-mail/shared/responses";
 import { eq } from "drizzle-orm";
 import type { Env } from "../env.ts";
 import { AppError } from "../errors.ts";

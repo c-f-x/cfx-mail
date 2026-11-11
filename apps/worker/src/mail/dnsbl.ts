@@ -16,7 +16,7 @@
 // and 127.255.255.0/24 carries errors (key disabled, key used from the wrong
 // account, malformed query) — never a listing.
 
-import type { DB } from "@cfmail/db";
+import type { DB } from "@cfx-mail/db";
 import { getConfig, setConfig } from "../config.ts";
 import { dohQuery } from "./dns.ts";
 

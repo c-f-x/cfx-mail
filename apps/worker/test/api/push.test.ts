@@ -1,5 +1,5 @@
-import { mailboxNotify, pushSubscription } from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
+import { mailboxNotify, pushSubscription } from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { pushRoutes } from "../../src/api/push.ts";

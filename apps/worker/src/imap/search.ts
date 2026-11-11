@@ -3,7 +3,7 @@
 // subject/bodyText); HEADER on any other field falls back to the raw message.
 /* eslint-disable no-await-in-loop -- evaluated per message so header loads stay bounded */
 
-import { Flag } from "@cfmail/shared/flags";
+import { Flag } from "@cfx-mail/shared/flags";
 import { headerValues, parseHeaderBlock } from "./mime-tree.ts";
 import {
   expandSequenceSet,

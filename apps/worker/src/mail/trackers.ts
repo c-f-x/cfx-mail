@@ -22,7 +22,7 @@
 // False positives cost a spacer GIF; misses cost a read receipt the proxy has
 // already stripped of IP and UA. Rendering-only — never touches stored mail.
 
-import type { DB } from "@cfmail/db";
+import type { DB } from "@cfx-mail/db";
 import { getConfig, setConfig } from "../config.ts";
 import { replaceCssUrls } from "./img-proxy.ts";
 

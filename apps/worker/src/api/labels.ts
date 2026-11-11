@@ -1,7 +1,7 @@
-import { label, message, messageLabel } from "@cfmail/db/schema";
-import { has, Perm } from "@cfmail/shared/permissions";
-import type { LabelListDto, MessageLabelsDto, ThreadLabelsDto } from "@cfmail/shared/responses";
-import { createLabel, updateLabel } from "@cfmail/shared/schemas";
+import { label, message, messageLabel } from "@cfx-mail/db/schema";
+import { has, Perm } from "@cfx-mail/shared/permissions";
+import type { LabelListDto, MessageLabelsDto, ThreadLabelsDto } from "@cfx-mail/shared/responses";
+import { createLabel, updateLabel } from "@cfx-mail/shared/schemas";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";

@@ -1,8 +1,8 @@
-import type { DB } from "@cfmail/db";
-import type { PgpKeyEvent, PgpVerify } from "@cfmail/db/enums";
-import { attachment, message, thread } from "@cfmail/db/schema";
-import { Flag } from "@cfmail/shared/flags";
-import { splitMessageIds } from "@cfmail/shared/schemas";
+import type { DB } from "@cfx-mail/db";
+import type { PgpKeyEvent, PgpVerify } from "@cfx-mail/db/enums";
+import { attachment, message, thread } from "@cfx-mail/db/schema";
+import { Flag } from "@cfx-mail/shared/flags";
+import { splitMessageIds } from "@cfx-mail/shared/schemas";
 import { and, DrizzleQueryError, eq, notExists } from "drizzle-orm";
 import type { Env } from "../env.ts";
 import { chunk, SQL_VARS_LIMIT } from "../lib/sql.ts";

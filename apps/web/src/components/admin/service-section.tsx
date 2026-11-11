@@ -1,4 +1,4 @@
-import { MailboxKind } from "@cfmail/shared/permissions";
+import { MailboxKind } from "@cfx-mail/shared/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check } from "lucide-react";
 import { useState } from "react";

@@ -1,4 +1,4 @@
-import type { UserPrefs } from "@cfmail/shared";
+import type { UserPrefs } from "@cfx-mail/shared";
 import { toast } from "sonner";
 import { Row, Section, Segmented } from "@/components/settings-ui.tsx";
 import { Button } from "@/components/ui/button.tsx";

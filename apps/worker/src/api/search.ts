@@ -1,7 +1,7 @@
-import { domain, mailbox } from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
-import type { SearchResultsDto } from "@cfmail/shared/responses";
-import { type SearchFilters, type SearchIn, searchFilters } from "@cfmail/shared/schemas";
+import { domain, mailbox } from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
+import type { SearchResultsDto } from "@cfx-mail/shared/responses";
+import { type SearchFilters, type SearchIn, searchFilters } from "@cfx-mail/shared/schemas";
 import { eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";

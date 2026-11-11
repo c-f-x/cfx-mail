@@ -14,15 +14,15 @@ import type {
   SearchFilters,
   SearchResultDto,
   ThreadDto,
-} from "@cfmail/shared";
-import { MAIL_VIEWS, MAX_BODIES_PER_REQUEST } from "@cfmail/shared/schemas";
+} from "@cfx-mail/shared";
+import { MAIL_VIEWS, MAX_BODIES_PER_REQUEST } from "@cfx-mail/shared/schemas";
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import { ApiError, rpc, unwrap } from "./api.ts";
 import { createBodyBatcher } from "./body-batcher.ts";
 import { plainErrorMessage } from "./error-message.ts";
 import { keys } from "./query-keys.ts";
 
-// Response models are owned by `@cfmail/shared` (single source of truth, derived
+// Response models are owned by `@cfx-mail/shared` (single source of truth, derived
 // from the DB schema). Re-exported here under the names the UI already uses so
 // call sites stay put. Requests themselves go through the typed RPC client
 // (`rpc`), so paths and response bodies are checked against the worker's routes.

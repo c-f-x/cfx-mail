@@ -1,4 +1,4 @@
-import type { MailView } from "@cfmail/shared";
+import type { MailView } from "@cfx-mail/shared";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearch } from "@tanstack/react-router";
 import { PenSquare } from "lucide-react";

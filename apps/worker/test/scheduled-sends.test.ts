@@ -1,5 +1,5 @@
-import { draft, mailboxMember, rateLimitCounter, user } from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
+import { draft, mailboxMember, rateLimitCounter, user } from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { messagesRoutes } from "../src/api/messages.ts";

@@ -1,4 +1,4 @@
-import type { FolderCountsDto, MailboxSummaryDto } from "@cfmail/shared";
+import type { FolderCountsDto, MailboxSummaryDto } from "@cfx-mail/shared";
 import { describe, expect, it } from "vitest";
 import {
   accountInitial,

@@ -1,6 +1,6 @@
 import { passkey } from "@better-auth/passkey";
-import { type DB, makeDB, schema } from "@cfmail/db";
-import { user } from "@cfmail/db/schema";
+import { type DB, makeDB, schema } from "@cfx-mail/db";
+import { user } from "@cfx-mail/db/schema";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError } from "better-auth/api";
 import { betterAuth } from "better-auth/minimal";

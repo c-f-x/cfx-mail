@@ -7,7 +7,7 @@ import {
   session,
   user,
   userInvite,
-} from "@cfmail/db/schema";
+} from "@cfx-mail/db/schema";
 import {
   acceptInvite,
   adminCreateUser,
@@ -15,7 +15,7 @@ import {
   createUserInvite,
   deleteUser,
   upsertDomainGrant,
-} from "@cfmail/shared/schemas";
+} from "@cfx-mail/shared/schemas";
 import { and, asc, count, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";

@@ -1,4 +1,4 @@
-import { blocklist } from "@cfmail/db/schema";
+import { blocklist } from "@cfx-mail/db/schema";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { blocklistRoutes } from "../../src/api/blocklist.ts";
 import { applyMigrationsOnce, db, mountApp, request, resetDb } from "../support/app.ts";

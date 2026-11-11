@@ -1,6 +1,6 @@
-import { attachment, draft, mailbox, message, thread } from "@cfmail/db/schema";
-import { Flag } from "@cfmail/shared/flags";
-import type { SendMessageInput } from "@cfmail/shared/schemas";
+import { attachment, draft, mailbox, message, thread } from "@cfx-mail/db/schema";
+import { Flag } from "@cfx-mail/shared/flags";
+import type { SendMessageInput } from "@cfx-mail/shared/schemas";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../src/env.ts";

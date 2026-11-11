@@ -16,7 +16,7 @@ import type {
   PgpMode,
   SpamFilterLevel,
   UserRole,
-} from "@cfmail/db/enums";
+} from "@cfx-mail/db/enums";
 import type {
   draft,
   folder,
@@ -27,10 +27,10 @@ import type {
   reminder,
   rule,
   thread,
-} from "@cfmail/db/schema";
+} from "@cfx-mail/db/schema";
 import type { MAIL_VIEWS } from "./schemas.ts";
 
-// Re-exported so the web app gets the rule JSON shapes without importing @cfmail/db.
+// Re-exported so the web app gets the rule JSON shapes without importing @cfx-mail/db.
 export type { RuleAction, RuleCondition };
 
 /** Map Drizzle `Date` columns to the `string` form `c.json()` actually sends. */

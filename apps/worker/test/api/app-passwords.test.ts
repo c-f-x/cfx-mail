@@ -1,5 +1,5 @@
-import { appPassword } from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
+import { appPassword } from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { appPasswordsRoutes } from "../../src/api/app-passwords.ts";

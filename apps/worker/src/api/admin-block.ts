@@ -1,5 +1,5 @@
-import { blocklist, blockRequest, user } from "@cfmail/db/schema";
-import { createBlockEntry, setDqsKey, setProtectedDomains } from "@cfmail/shared/schemas";
+import { blocklist, blockRequest, user } from "@cfx-mail/db/schema";
+import { createBlockEntry, setDqsKey, setProtectedDomains } from "@cfx-mail/shared/schemas";
 import { aliasedTable, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";

@@ -1,6 +1,6 @@
-import type { DB } from "@cfmail/db";
-import { account, user } from "@cfmail/db/schema";
-import { bootstrapAdmin } from "@cfmail/shared/schemas";
+import type { DB } from "@cfx-mail/db";
+import { account, user } from "@cfx-mail/db/schema";
+import { bootstrapAdmin } from "@cfx-mail/shared/schemas";
 import { hashPassword } from "better-auth/crypto";
 import { count, eq } from "drizzle-orm";
 import { Hono } from "hono";

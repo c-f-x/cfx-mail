@@ -293,7 +293,7 @@ Admin, Mailboxes, "New redirect" makes an inbound-only alias: mail to the alias 
 
 ## 7. Migrations
 
-Edit `schema.ts`, then `pnpm --filter @cfmail/db generate` to emit the `drizzle/NNNN_*.sql` file, snapshot and journal entry. Add the new file's line to `packages/db/drizzle/sealed.json`; `scripts/migrations.test.mjs` prints it for you. Apply locally with `pnpm --filter @cfmail/db migrate:local`; `scripts/deploy.sh <name>` applies them to a deployment. Never edit a migration once it is merged: deployments that ran it will not run it again. Hand-writing a migration is fine for what `generate` can't express (FTS triggers), but keep the snapshot and journal consistent. Production data exists; never drop and recreate tables.
+Edit `schema.ts`, then `pnpm --filter @cfx-mail/db generate` to emit the `drizzle/NNNN_*.sql` file, snapshot and journal entry. Add the new file's line to `packages/db/drizzle/sealed.json`; `scripts/migrations.test.mjs` prints it for you. Apply locally with `pnpm --filter @cfx-mail/db migrate:local`; `scripts/deploy.sh <name>` applies them to a deployment. Never edit a migration once it is merged: deployments that ran it will not run it again. Hand-writing a migration is fine for what `generate` can't express (FTS triggers), but keep the snapshot and journal consistent. Production data exists; never drop and recreate tables.
 
 ## 8. Tooling
 

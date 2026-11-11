@@ -7,22 +7,22 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".wrangler/**"]
     },
-    // apps/web depends on @cfmail/worker only for types (Hono RPC AppType,
+    // apps/web depends on @cfx-mail/worker only for types (Hono RPC AppType,
     // imported straight from worker sources) — no build artifacts are needed,
     // and inheriting ^build would close a cycle with the worker's asset embed.
-    "@cfmail/web#build": {
+    "@cfx-mail/web#build": {
       "dependsOn": [],
       "outputs": ["dist/**"]
     },
     // The web app type-checks against the Worker's route types, so a change in
     // the Worker's sources must invalidate the web typecheck's cache. Depending
     // on the Worker's typecheck folds its inputs into this task's hash.
-    "@cfmail/web#typecheck": {
+    "@cfx-mail/web#typecheck": {
       "dependsOn": ["^typecheck"],
       "outputs": []
     },
-    "@cfmail/worker#build": {
-      "dependsOn": ["^build", "@cfmail/web#build"],
+    "@cfx-mail/worker#build": {
+      "dependsOn": ["^build", "@cfx-mail/web#build"],
       "outputs": ["dist/**", ".wrangler/**"]
     },
     "dev": {

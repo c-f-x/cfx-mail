@@ -1,4 +1,4 @@
-import { blocklist, blockRequest, systemConfig } from "@cfmail/db/schema";
+import { blocklist, blockRequest, systemConfig } from "@cfx-mail/db/schema";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { adminBlockRoutes } from "../../src/api/admin-block.ts";

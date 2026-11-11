@@ -1,4 +1,4 @@
-import type { ThreadDto } from "@cfmail/shared";
+import type { ThreadDto } from "@cfx-mail/shared";
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {

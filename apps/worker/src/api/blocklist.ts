@@ -1,4 +1,4 @@
-import { checkBlockRecipients } from "@cfmail/shared/schemas";
+import { checkBlockRecipients } from "@cfx-mail/shared/schemas";
 import { Hono } from "hono";
 import { dbFromCtx } from "../db.ts";
 import type { AppBindings } from "../env.ts";

@@ -11,10 +11,10 @@ import {
   SERVICE_MODES,
   SPAM_FILTER_LEVELS,
   USER_ROLES,
-} from "@cfmail/db/enums";
+} from "@cfx-mail/db/enums";
 import { z } from "zod";
 
-// Enum validators derive from the shared tuples in @cfmail/db/enums, so the
+// Enum validators derive from the shared tuples in @cfx-mail/db/enums, so the
 // Zod input contracts can never drift from the DB columns.
 export const MailboxType = z.enum(MAILBOX_TYPES);
 export type MailboxType = z.infer<typeof MailboxType>;
@@ -282,15 +282,15 @@ export type {
   RuleConditionMode,
   RuleField,
   RuleOp,
-} from "@cfmail/db/enums";
+} from "@cfx-mail/db/enums";
 // Re-export the rule enum tuples + types so the web UI can build pickers without
-// importing @cfmail/db directly.
+// importing @cfx-mail/db directly.
 export {
   RULE_ACTION_TYPES,
   RULE_CONDITION_MODES,
   RULE_FIELDS,
   RULE_OPS,
-} from "@cfmail/db/enums";
+} from "@cfx-mail/db/enums";
 
 // A regex condition's pattern, compiled the way inbound evaluation
 // (mail/rules.ts) compiles it: case-insensitive. Null when it does not compile.

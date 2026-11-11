@@ -1,4 +1,4 @@
-import { domainGrant, systemConfig, user, userInvite } from "@cfmail/db/schema";
+import { domainGrant, systemConfig, user, userInvite } from "@cfx-mail/db/schema";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { usersRoutes } from "../../src/api/users.ts";

@@ -1,4 +1,4 @@
-import type { UnsubscribeTargetDto } from "@cfmail/shared/responses";
+import type { UnsubscribeTargetDto } from "@cfx-mail/shared/responses";
 
 // The confirm dialog shown before an unsubscribe is sent. It names where the
 // request goes, because the target comes from the mail's own headers.

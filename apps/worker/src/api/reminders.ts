@@ -1,7 +1,7 @@
-import { message, reminder, thread } from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
-import type { ReminderListDto } from "@cfmail/shared/responses";
-import { createReminder, updateReminder } from "@cfmail/shared/schemas";
+import { message, reminder, thread } from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
+import type { ReminderListDto } from "@cfx-mail/shared/responses";
+import { createReminder, updateReminder } from "@cfx-mail/shared/schemas";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";

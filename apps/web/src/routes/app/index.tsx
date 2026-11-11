@@ -1,4 +1,4 @@
-import { parseUserPrefs } from "@cfmail/shared";
+import { parseUserPrefs } from "@cfx-mail/shared";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { Inbox } from "lucide-react";
 import { EmptyState } from "@/components/ui.tsx";

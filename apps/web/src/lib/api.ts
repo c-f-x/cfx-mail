@@ -1,4 +1,4 @@
-import type { AppType } from "@cfmail/worker/api";
+import type { AppType } from "@cfx-mail/worker/api";
 import type { ClientResponse } from "hono/client";
 import { hc } from "hono/client";
 import type { ResponseFormat } from "hono/types";

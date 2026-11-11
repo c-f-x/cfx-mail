@@ -1,5 +1,5 @@
-import { domain, mailbox, redirect } from "@cfmail/db/schema";
-import { ALL_MAILBOX_KINDS } from "@cfmail/shared/permissions";
+import { domain, mailbox, redirect } from "@cfx-mail/db/schema";
+import { ALL_MAILBOX_KINDS } from "@cfx-mail/shared/permissions";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { adminRoutes } from "../../src/api/admin.ts";

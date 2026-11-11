@@ -1,4 +1,10 @@
-import { domain, pushSubscription, rateLimit, rateLimitCounter, reminder } from "@cfmail/db/schema";
+import {
+  domain,
+  pushSubscription,
+  rateLimit,
+  rateLimitCounter,
+  reminder,
+} from "@cfx-mail/db/schema";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setConfig } from "../src/config.ts";

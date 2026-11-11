@@ -1,4 +1,4 @@
-import type { MailView, UserPrefs } from "@cfmail/shared";
+import type { MailView, UserPrefs } from "@cfx-mail/shared";
 import { Row, Section, Segmented } from "@/components/settings-ui.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
 import { useUserPrefs } from "@/lib/prefs.ts";

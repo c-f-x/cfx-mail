@@ -1,5 +1,5 @@
 import { applyD1Migrations, env } from "cloudflare:test";
-import { makeDB } from "@cfmail/db";
+import { makeDB } from "@cfx-mail/db";
 import {
   attachment,
   domain,
@@ -10,8 +10,8 @@ import {
   systemConfig,
   thread,
   user,
-} from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
+} from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../src/env.ts";

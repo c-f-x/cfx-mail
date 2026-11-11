@@ -1,5 +1,5 @@
 {
-  "name": "@cfmail/worker",
+  "name": "@cfx-mail/worker",
   "version": "0.1.0",
   "license": "MIT",
   "private": true,
@@ -18,8 +18,8 @@
   },
   "dependencies": {
     "@better-auth/passkey": "1.7.18",
-    "@cfmail/db": "workspace:*",
-    "@cfmail/shared": "workspace:*",
+    "@cfx-mail/db": "workspace:*",
+    "@cfx-mail/shared": "workspace:*",
     "@hono/zod-validator": "0.9.1",
     "better-auth": "1.7.18",
     "drizzle-orm": "0.45.4",

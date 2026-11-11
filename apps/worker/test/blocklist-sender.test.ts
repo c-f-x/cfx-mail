@@ -1,4 +1,4 @@
-import { blocklist, message } from "@cfmail/db/schema";
+import { blocklist, message } from "@cfx-mail/db/schema";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { isSenderBlocked } from "../src/mail/blocklist.ts";
 import { handleInbound } from "../src/mail/receive.ts";

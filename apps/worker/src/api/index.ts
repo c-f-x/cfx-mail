@@ -1,4 +1,4 @@
-import type { MeUserDto } from "@cfmail/shared/responses";
+import type { MeUserDto } from "@cfx-mail/shared/responses";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { cors } from "hono/cors";

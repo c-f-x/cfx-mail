@@ -6,10 +6,10 @@ The repository is a pnpm workspace (`pnpm-workspace.yaml`) with two apps and two
 
 | Package | Folder | Role |
 |---|---|---|
-| `@cfmail/worker` | `apps/worker` | The Cloudflare Worker: API, inbound mail, cron, IMAP, the `UserHub` Durable Object. |
-| `@cfmail/web` | `apps/web` | The React single-page app, served by the Worker as static assets. |
-| `@cfmail/db` | `packages/db` | Database schema, column enums and migrations. |
-| `@cfmail/shared` | `packages/shared` | Request schemas, response types, event types, permission and flag bits. Used by both apps. |
+| `@cfx-mail/worker` | `apps/worker` | The Cloudflare Worker: API, inbound mail, cron, IMAP, the `UserHub` Durable Object. |
+| `@cfx-mail/web` | `apps/web` | The React single-page app, served by the Worker as static assets. |
+| `@cfx-mail/db` | `packages/db` | Database schema, column enums and migrations. |
+| `@cfx-mail/shared` | `packages/shared` | Request schemas, response types, event types, permission and flag bits. Used by both apps. |
 | | `scripts` | Deploy, backup and restore (Node, run from a developer's machine). |
 
 ## `apps/worker`
@@ -89,7 +89,7 @@ Between packages:
 - `packages/db` imports no workspace package.
 - `packages/shared` imports `packages/db` (`enums.ts` values, `schema.ts` types) and nothing else.
 - `apps/worker` imports `packages/db` and `packages/shared`.
-- `apps/web` imports `packages/shared`, and the Worker's route types once, type-only (`import type { AppType } from "@cfmail/worker/api"` in `src/lib/api.ts`). It imports no Worker code and no `@cfmail/db` directly.
+- `apps/web` imports `packages/shared`, and the Worker's route types once, type-only (`import type { AppType } from "@cfx-mail/worker/api"` in `src/lib/api.ts`). It imports no Worker code and no `@cfx-mail/db` directly.
 
 Inside `apps/worker/src`:
 
@@ -121,4 +121,4 @@ Two more rules come from `AGENTS.md`:
 Two older checks help as well:
 
 - Biome's `useImportType` rule is an error, so an import used only for types must be written `import type`. It keeps the web app's import of the Worker type-only once it is written that way.
-- `@cfmail/worker` exports `./api` with only a `types` condition (`apps/worker/package.json`). A value import of it from the web app would probably fail the Vite build. This is not tested.
+- `@cfx-mail/worker` exports `./api` with only a `types` condition (`apps/worker/package.json`). A value import of it from the web app would probably fail the Vite build. This is not tested.

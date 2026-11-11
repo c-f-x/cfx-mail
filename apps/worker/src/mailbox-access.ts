@@ -1,6 +1,6 @@
-import type { DB } from "@cfmail/db";
-import { domain, domainGrant } from "@cfmail/db/schema";
-import { kindBit, type MailboxKindBit } from "@cfmail/shared/permissions";
+import type { DB } from "@cfx-mail/db";
+import { domain, domainGrant } from "@cfx-mail/db/schema";
+import { kindBit, type MailboxKindBit } from "@cfx-mail/shared/permissions";
 import { and, eq } from "drizzle-orm";
 import type { User } from "./auth.ts";
 import { AppError } from "./errors.ts";

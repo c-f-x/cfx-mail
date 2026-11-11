@@ -1,4 +1,4 @@
-import { has, Perm, type PermBit } from "@cfmail/shared/permissions";
+import { has, Perm, type PermBit } from "@cfx-mail/shared/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
 import { useId, useState } from "react";

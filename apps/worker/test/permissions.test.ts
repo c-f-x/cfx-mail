@@ -1,7 +1,7 @@
 import { applyD1Migrations, env } from "cloudflare:test";
-import { makeDB } from "@cfmail/db";
-import { domain, mailbox, mailboxMember, user } from "@cfmail/db/schema";
-import { ALL_PERMS, Perm } from "@cfmail/shared/permissions";
+import { makeDB } from "@cfx-mail/db";
+import { domain, mailbox, mailboxMember, user } from "@cfx-mail/db/schema";
+import { ALL_PERMS, Perm } from "@cfx-mail/shared/permissions";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../src/env.ts";

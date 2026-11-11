@@ -1,10 +1,10 @@
-import { domain, mailbox } from "@cfmail/db/schema";
+import { domain, mailbox } from "@cfx-mail/db/schema";
 import {
   createDomain,
   setAuthFromAddress,
   setImapSettings,
   updateDomain,
-} from "@cfmail/shared/schemas";
+} from "@cfx-mail/shared/schemas";
 import { and, asc, eq, notExists } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";

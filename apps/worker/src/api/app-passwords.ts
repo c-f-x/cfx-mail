@@ -1,7 +1,7 @@
-import { appPassword, domain, mailbox } from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
-import type { AppPasswordCreatedDto, AppPasswordListDto } from "@cfmail/shared/responses";
-import { createAppPassword } from "@cfmail/shared/schemas";
+import { appPassword, domain, mailbox } from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
+import type { AppPasswordCreatedDto, AppPasswordListDto } from "@cfx-mail/shared/responses";
+import { createAppPassword } from "@cfx-mail/shared/schemas";
 import { and, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";

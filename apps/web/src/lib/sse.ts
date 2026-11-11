@@ -1,4 +1,4 @@
-import type { HubEvent } from "@cfmail/shared/events";
+import type { HubEvent } from "@cfx-mail/shared/events";
 import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import { toast } from "sonner";

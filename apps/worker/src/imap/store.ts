@@ -14,10 +14,10 @@
 // "active" = not trashed, not spam; "live" = no TRASH flag.
 /* eslint-disable no-await-in-loop -- per-thread cleanup runs in order to keep D1 statement sizes bounded */
 
-import type { DB } from "@cfmail/db";
-import type { ImapFolderKind } from "@cfmail/db/enums";
-import { folder, imapFolder, imapUid, message, thread, threadFolder } from "@cfmail/db/schema";
-import { Flag, has, Perm } from "@cfmail/shared";
+import type { DB } from "@cfx-mail/db";
+import type { ImapFolderKind } from "@cfx-mail/db/enums";
+import { folder, imapFolder, imapUid, message, thread, threadFolder } from "@cfx-mail/db/schema";
+import { Flag, has, Perm } from "@cfx-mail/shared";
 import { and, asc, eq, inArray, isNotNull, or, type SQL, sql } from "drizzle-orm";
 import type { Env } from "../env.ts";
 import { AppError, wrapUnique } from "../errors.ts";

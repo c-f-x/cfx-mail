@@ -1,4 +1,4 @@
-import { parseUserPrefs, type UserPrefs } from "@cfmail/shared";
+import { parseUserPrefs, type UserPrefs } from "@cfx-mail/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient } from "./auth-client.ts";
 import { type MeUser, meQuery } from "./queries.ts";

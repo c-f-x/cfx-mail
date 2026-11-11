@@ -1,6 +1,6 @@
-import type { DB } from "@cfmail/db";
-import { mailbox, mailboxMember } from "@cfmail/db/schema";
-import { ALL_PERMS, has, Perm, type PermBit } from "@cfmail/shared/permissions";
+import type { DB } from "@cfx-mail/db";
+import { mailbox, mailboxMember } from "@cfx-mail/db/schema";
+import { ALL_PERMS, has, Perm, type PermBit } from "@cfx-mail/shared/permissions";
 import { and, eq, isNull, ne, or, type SQL } from "drizzle-orm";
 import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { AppError } from "./errors.ts";

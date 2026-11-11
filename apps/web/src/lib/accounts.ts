@@ -1,5 +1,5 @@
-import type { FolderCountsDto, MailboxSummaryDto, MailView } from "@cfmail/shared";
-import { has, Perm } from "@cfmail/shared/permissions";
+import type { FolderCountsDto, MailboxSummaryDto, MailView } from "@cfx-mail/shared";
+import { has, Perm } from "@cfx-mail/shared/permissions";
 
 // The rules of the account switcher and of everything that depends on "which
 // account am I in": which address a new message is sent from, what a list row

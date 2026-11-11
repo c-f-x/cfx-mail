@@ -1,4 +1,4 @@
-import { Flag, hasFlag, setFlag } from "@cfmail/shared/flags";
+import { Flag, hasFlag, setFlag } from "@cfx-mail/shared/flags";
 import {
   ALL_MAILBOX_KINDS,
   ALL_PERMS,
@@ -10,14 +10,14 @@ import {
   MailboxKind,
   Perm,
   revoke,
-} from "@cfmail/shared/permissions";
+} from "@cfx-mail/shared/permissions";
 import {
   createRule,
   sendMessage,
   serviceSend,
   splitMessageIds,
   updateRule,
-} from "@cfmail/shared/schemas";
+} from "@cfx-mail/shared/schemas";
 import { describe, expect, it } from "vitest";
 
 describe("message flags", () => {

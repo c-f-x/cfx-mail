@@ -78,7 +78,7 @@ export const user = sqliteTable("user", {
   banExpires: integer("ban_expires", { mode: "timestamp" }),
   // twoFactor plugin
   twoFactorEnabled: integer("two_factor_enabled", { mode: "boolean" }).notNull().default(false),
-  // App-level user preferences (JSON string, see UserPrefs in @cfmail/shared).
+  // App-level user preferences (JSON string, see UserPrefs in @cfx-mail/shared).
   // Persisted via Better Auth additionalFields so it round-trips through the session.
   preferences: text("preferences"),
   ...timestamps(),

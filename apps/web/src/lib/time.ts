@@ -1,4 +1,4 @@
-import type { DateFormat, UserPrefs } from "@cfmail/shared";
+import type { DateFormat, UserPrefs } from "@cfx-mail/shared";
 import { useEffect, useState } from "react";
 
 // ─── Date & time formatting ───────────────────────────────────────────────

@@ -1,8 +1,8 @@
-import type { DB } from "@cfmail/db";
-import { label, type RuleAction, rule } from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
-import type { RuleCloneResultDto, RuleDto, RuleListDto } from "@cfmail/shared/responses";
-import { cloneRule, createRule, updateRule } from "@cfmail/shared/schemas";
+import type { DB } from "@cfx-mail/db";
+import { label, type RuleAction, rule } from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
+import type { RuleCloneResultDto, RuleDto, RuleListDto } from "@cfx-mail/shared/responses";
+import { cloneRule, createRule, updateRule } from "@cfx-mail/shared/schemas";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";

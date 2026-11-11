@@ -1,4 +1,4 @@
-import type { EmailTemplate } from "@cfmail/shared/responses";
+import type { EmailTemplate } from "@cfx-mail/shared/responses";
 import { Lock, Paperclip, Send, ShieldCheck, Trash2 } from "lucide-react";
 import { useRef } from "react";
 import { Badge } from "../ui/badge.tsx";

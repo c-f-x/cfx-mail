@@ -2,7 +2,7 @@
 // Spectrum terminates TLS and hands us the plaintext socket; one invocation
 // lives for the whole IMAP session.
 
-import { makeDB } from "@cfmail/db";
+import { makeDB } from "@cfx-mail/db";
 import type { Env } from "../env.ts";
 import { ImapSession } from "./session.ts";
 

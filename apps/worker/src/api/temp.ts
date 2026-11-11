@@ -1,6 +1,6 @@
-import { domain, domainGrant, mailbox } from "@cfmail/db/schema";
-import { kindBit } from "@cfmail/shared/permissions";
-import { createTempMailbox } from "@cfmail/shared/schemas";
+import { domain, domainGrant, mailbox } from "@cfx-mail/db/schema";
+import { kindBit } from "@cfx-mail/shared/permissions";
+import { createTempMailbox } from "@cfx-mail/shared/schemas";
 import { asc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";

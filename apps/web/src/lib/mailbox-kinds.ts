@@ -1,4 +1,4 @@
-import { MailboxKind } from "@cfmail/shared/permissions";
+import { MailboxKind } from "@cfx-mail/shared/permissions";
 
 // The kinds the mailbox forms can create, out of those a domain (and grant)
 // allows. Temp mailboxes are made with "New temporary account" and service

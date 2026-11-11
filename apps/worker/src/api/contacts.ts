@@ -1,5 +1,5 @@
-import { domain, mailbox, message } from "@cfmail/db/schema";
-import type { ContactsDto } from "@cfmail/shared/responses";
+import { domain, mailbox, message } from "@cfx-mail/db/schema";
+import type { ContactsDto } from "@cfx-mail/shared/responses";
 import { desc, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { dbFromCtx } from "../db.ts";

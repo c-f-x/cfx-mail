@@ -1,4 +1,4 @@
-import type { MailView } from "@cfmail/shared";
+import type { MailView } from "@cfx-mail/shared";
 import {
   FileText,
   Inbox,

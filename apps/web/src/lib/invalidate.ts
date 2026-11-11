@@ -1,4 +1,4 @@
-import type { MailboxSummaryDto, MailView, MessageDto, ThreadDto } from "@cfmail/shared";
+import type { MailboxSummaryDto, MailView, MessageDto, ThreadDto } from "@cfx-mail/shared";
 import type { QueryClient } from "@tanstack/react-query";
 import { keys } from "./query-keys.ts";
 

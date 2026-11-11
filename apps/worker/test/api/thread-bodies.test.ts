@@ -1,7 +1,7 @@
-import { attachment, message, thread } from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
-import type { MessageBodyDto } from "@cfmail/shared/responses";
-import { MAX_BODIES_PER_REQUEST } from "@cfmail/shared/schemas";
+import { attachment, message, thread } from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
+import type { MessageBodyDto } from "@cfx-mail/shared/responses";
+import { MAX_BODIES_PER_REQUEST } from "@cfx-mail/shared/schemas";
 import { eq } from "drizzle-orm";
 import type { Hono } from "hono";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";

@@ -1,4 +1,4 @@
-import type { ReminderDto } from "@cfmail/shared";
+import type { ReminderDto } from "@cfx-mail/shared";
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { rpc, unwrap } from "./api.ts";

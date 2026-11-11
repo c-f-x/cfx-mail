@@ -1,4 +1,4 @@
-import { systemConfig } from "@cfmail/db/schema";
+import { systemConfig } from "@cfx-mail/db/schema";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApi } from "../../src/api/index.ts";

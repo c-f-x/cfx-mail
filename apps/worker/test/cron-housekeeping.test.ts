@@ -1,4 +1,4 @@
-import { draft, rule, ruleSendLog, session, user, userInvite } from "@cfmail/db/schema";
+import { draft, rule, ruleSendLog, session, user, userInvite } from "@cfx-mail/db/schema";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { runCron } from "../src/cron.ts";

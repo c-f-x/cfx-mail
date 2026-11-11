@@ -1,4 +1,4 @@
-import { attachment, draft, message } from "@cfmail/db/schema";
+import { attachment, draft, message } from "@cfx-mail/db/schema";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { attachmentsRoutes } from "../src/api/attachments.ts";

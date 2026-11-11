@@ -1,5 +1,5 @@
-import type { DB } from "@cfmail/db";
-import { mailbox } from "@cfmail/db/schema";
+import type { DB } from "@cfx-mail/db";
+import { mailbox } from "@cfx-mail/db/schema";
 import { and, eq } from "drizzle-orm";
 import { mailboxNotDeletePending } from "./permissions.ts";
 

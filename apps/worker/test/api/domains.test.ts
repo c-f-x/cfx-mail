@@ -1,4 +1,4 @@
-import { domain } from "@cfmail/db/schema";
+import { domain } from "@cfx-mail/db/schema";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { domainsRoutes } from "../../src/api/domains.ts";

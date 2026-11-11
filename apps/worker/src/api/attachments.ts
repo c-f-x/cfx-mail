@@ -1,5 +1,5 @@
-import { attachment, message } from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
+import { attachment, message } from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";

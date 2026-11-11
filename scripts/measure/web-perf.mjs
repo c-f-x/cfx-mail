@@ -7,7 +7,7 @@
 //   node scripts/measure/web-perf.mjs --playwright /tmp/pw/node_modules/playwright-core \
 //     [--chromium <path to a Chromium binary>] [--seed /tmp/cfx-mail-seed.json] [--runs 5] [--threads 1000]
 //
-// Build the web app first (npx -y pnpm@12.4.1 --filter @cfmail/web build); the
+// Build the web app first (npx -y pnpm@12.4.1 --filter @cfx-mail/web build); the
 // worker serves apps/web/dist. Each run uses a fresh browser context, so the
 // HTTP cache is empty. Desktop viewport 1440x900, no CPU or network throttling.
 // Only GET requests and one sign-in are made; nothing is sent.

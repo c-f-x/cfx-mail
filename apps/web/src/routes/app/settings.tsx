@@ -1,4 +1,4 @@
-import { has, Perm } from "@cfmail/shared/permissions";
+import { has, Perm } from "@cfx-mail/shared/permissions";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { MailboxImportSection, MailboxSettingsForm } from "@/components/mailbox-settings-form.tsx";

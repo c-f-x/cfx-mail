@@ -15,8 +15,8 @@ import {
   rule,
   thread,
   threadFolder,
-} from "@cfmail/db/schema";
-import { ALL_MAILBOX_KINDS, Perm } from "@cfmail/shared/permissions";
+} from "@cfx-mail/db/schema";
+import { ALL_MAILBOX_KINDS, Perm } from "@cfx-mail/shared/permissions";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApi } from "../../src/api/index.ts";

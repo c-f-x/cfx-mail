@@ -1,6 +1,6 @@
-import type { DB } from "@cfmail/db";
-import { attachment, type message } from "@cfmail/db/schema";
-import type { AttachmentDto, MessageBodyDto } from "@cfmail/shared/responses";
+import type { DB } from "@cfx-mail/db";
+import { attachment, type message } from "@cfx-mail/db/schema";
+import type { AttachmentDto, MessageBodyDto } from "@cfx-mail/shared/responses";
 import { inArray } from "drizzle-orm";
 import { getOrCreateAuthSecret } from "../config.ts";
 import type { Env } from "../env.ts";

@@ -65,10 +65,10 @@ for (const [dir, files] of [...byDir].toSorted(([a], [b]) => (a < b ? -1 : a > b
 // their children once) and counts unique name@version pairs, peers included.
 const workspace = [
   "cloudflare-mail",
-  "@cfmail/web",
-  "@cfmail/worker",
-  "@cfmail/db",
-  "@cfmail/shared",
+  "@cfx-mail/web",
+  "@cfx-mail/worker",
+  "@cfx-mail/db",
+  "@cfx-mail/shared",
 ];
 function tree(name, prodOnly) {
   const args = ["-y", "pnpm@12.4.1", "--filter", name, "ls", "--depth", "Infinity", "--json"];

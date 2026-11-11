@@ -1,5 +1,5 @@
-import type { SearchFilters, SearchResultDto, SearchResultsDto } from "@cfmail/shared";
-import { Flag, hasFlag } from "@cfmail/shared/flags";
+import type { SearchFilters, SearchResultDto, SearchResultsDto } from "@cfx-mail/shared";
+import { Flag, hasFlag } from "@cfx-mail/shared/flags";
 import { type UseQueryResult, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {

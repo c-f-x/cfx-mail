@@ -1,5 +1,5 @@
-import type { DB } from "@cfmail/db";
-import { blocklist } from "@cfmail/db/schema";
+import type { DB } from "@cfx-mail/db";
+import { blocklist } from "@cfx-mail/db/schema";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { getConfig, setConfig } from "../config.ts";
 

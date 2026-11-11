@@ -1,4 +1,4 @@
-import { schema } from "@cfmail/db";
+import { schema } from "@cfx-mail/db";
 import { getAuthTables } from "better-auth/db";
 import { getTableColumns, getTableName } from "drizzle-orm";
 import { getTableConfig, type SQLiteTable } from "drizzle-orm/sqlite-core";
@@ -13,7 +13,7 @@ import { authPlugins, userAdditionalFields } from "../src/auth.ts";
 // fields it expects and diffs them against the live Drizzle definitions.
 //
 // If it fails after upgrading better-auth: reconcile schema.ts to match, then
-// `pnpm --filter @cfmail/db generate` a migration for the change.
+// `pnpm --filter @cfx-mail/db generate` a migration for the change.
 
 // getAuthTables() model key -> our Drizzle table export.
 const TABLES: Record<string, SQLiteTable> = {

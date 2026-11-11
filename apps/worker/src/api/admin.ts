@@ -1,4 +1,4 @@
-import { domain, mailbox, mailboxMember, message, redirect, user } from "@cfmail/db/schema";
+import { domain, mailbox, mailboxMember, message, redirect, user } from "@cfx-mail/db/schema";
 import {
   adminCreateMailbox,
   adminDeleteMailbox,
@@ -8,7 +8,7 @@ import {
   updateMailboxSettings,
   updateRedirect,
   updateServiceMailbox,
-} from "@cfmail/shared/schemas";
+} from "@cfx-mail/shared/schemas";
 import { aliasedTable, and, asc, count, desc, eq, inArray, max, ne } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";

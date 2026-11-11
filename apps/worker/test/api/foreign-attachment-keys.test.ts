@@ -1,4 +1,4 @@
-import { draft } from "@cfmail/db/schema";
+import { draft } from "@cfx-mail/db/schema";
 import { eq } from "drizzle-orm";
 import type { Hono } from "hono";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";

@@ -1,5 +1,5 @@
 import { EmailMessage } from "cloudflare:email";
-import type { DB } from "@cfmail/db";
+import type { DB } from "@cfx-mail/db";
 import {
   attachment,
   contactKey,
@@ -8,9 +8,9 @@ import {
   message,
   reminder,
   thread,
-} from "@cfmail/db/schema";
-import { Flag } from "@cfmail/shared/flags";
-import type { SendMessageInput, ServiceSendHeaders } from "@cfmail/shared/schemas";
+} from "@cfx-mail/db/schema";
+import { Flag } from "@cfx-mail/shared/flags";
+import type { SendMessageInput, ServiceSendHeaders } from "@cfx-mail/shared/schemas";
 import { and, count, eq, inArray } from "drizzle-orm";
 import { getOrCreatePgpMasterKey } from "../config.ts";
 import type { Env } from "../env.ts";

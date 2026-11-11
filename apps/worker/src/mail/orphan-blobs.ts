@@ -1,5 +1,5 @@
-import type { DB } from "@cfmail/db";
-import { user } from "@cfmail/db/schema";
+import type { DB } from "@cfx-mail/db";
+import { user } from "@cfx-mail/db/schema";
 import { like, sql } from "drizzle-orm";
 import type { Env } from "../env.ts";
 import { avatarKey } from "./blob-keys.ts";

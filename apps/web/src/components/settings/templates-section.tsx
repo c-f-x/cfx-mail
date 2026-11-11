@@ -1,4 +1,4 @@
-import type { EmailTemplate } from "@cfmail/shared";
+import type { EmailTemplate } from "@cfx-mail/shared";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Section } from "@/components/settings-ui.tsx";

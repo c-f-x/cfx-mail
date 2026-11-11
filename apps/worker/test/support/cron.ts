@@ -1,5 +1,5 @@
-import { makeDB } from "@cfmail/db";
-import { domain } from "@cfmail/db/schema";
+import { makeDB } from "@cfx-mail/db";
+import { domain } from "@cfx-mail/db/schema";
 import { setConfig } from "../../src/config.ts";
 import { runCron } from "../../src/cron.ts";
 import type { Env } from "../../src/env.ts";

@@ -1,4 +1,4 @@
-import { parseUserPrefs } from "@cfmail/shared";
+import { parseUserPrefs } from "@cfx-mail/shared";
 import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import { buildMailto, parseMailto } from "@/lib/mailto.ts";

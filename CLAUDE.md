@@ -36,7 +36,7 @@ The repo pins pnpm 12.4.1. Older versions cannot read the lockfile and fail with
 ## Running it locally
 
 - Local development sends real mail through the owner's Cloudflare account, because the `EMAIL` binding is remote. Start the Worker with `wrangler dev --local` to swap it for a local stand-in, and never press Send or confirm an Unsubscribe while checking screens.
-- Sign in through the Worker's own port, not Vite's: the Worker only trusts its own origin. Build the web app first (`pnpm --filter @cfmail/web build`).
+- Sign in through the Worker's own port, not Vite's: the Worker only trusts its own origin. Build the web app first (`pnpm --filter @cfx-mail/web build`).
 - First-run setup needs `SETUP_TOKEN=<any value>` in `apps/worker/.dev.vars` (gitignored).
 - `node scripts/seed-local.mjs` fills a local Worker with fictional mail; `scripts/measure/` holds the measurement scripts. Use a separate `--persist-to` folder and a free port, and trash both afterwards.
 
@@ -59,8 +59,8 @@ Times were measured on the owner's Mac on 2026-11-11 without the turbo cache (`T
 | `pnpm test:slow` | The backup-and-restore round trip on local storage, and the guard proof (each access check removed in a scratch copy must fail a named test) | About 6 minutes: the round trip about 5, the guard proof 47 s (2026-11-11) |
 
 - Run lint and typecheck on every change.
-- A change under `apps/worker`, `packages/db` or `packages/shared` runs `pnpm --filter @cfmail/worker test`.
-- A change under `apps/web` runs `pnpm --filter @cfmail/web test`.
+- A change under `apps/worker`, `packages/db` or `packages/shared` runs `pnpm --filter @cfx-mail/worker test`.
+- A change under `apps/web` runs `pnpm --filter @cfx-mail/web test`.
 - When unsure what a change touches, run all four commands.
 - CI runs all four on every pull request and on every push to `master`. `pnpm test:slow` runs only on pushes to `master`; run it yourself after changing `scripts/backup*` or `scripts/restore.mjs`.
 - `scripts/docs.test.mjs` (part of `pnpm test`) fails when a doc names a path that does not exist, when this file passes 150 lines, or when a decision heading leaves the form `## D-<n> · <title> · <status> (<date>)`.
@@ -74,7 +74,7 @@ Budgets count bytes and database statements, never milliseconds, so a busy CI Ma
 | Budget | Command | Limits live in |
 |---|---|---|
 | Worker bundle (raw, gzip) and web JavaScript and CSS (raw, gzip, largest chunk). Also fails if a source map would be uploaded with the assets (`apps/web/public/.assetsignore` keeps them back) | `pnpm run check:bundles`, after `pnpm build`. CI runs it in the `build` job. Under 1 s. | `scripts/budgets/check-bundles.mjs` (its own tests run with `pnpm test`) |
-| D1 statements per request: inbox list, thread counts, search, opening a thread (1, 10 and 50 messages), one message body, a thread's bodies (1 and 50 messages), send, inbound delivery (plain and joining a thread), idle cron tick | `pnpm --filter @cfmail/worker test` (the `test/budgets/` folder, about 8 s). Counted exactly on real Miniflare D1 through the real app and real sessions. | `apps/worker/test/budgets/statements.test.ts` (the counter is `test/support/count-statements.ts`) |
+| D1 statements per request: inbox list, thread counts, search, opening a thread (1, 10 and 50 messages), one message body, a thread's bodies (1 and 50 messages), send, inbound delivery (plain and joining a thread), idle cron tick | `pnpm --filter @cfx-mail/worker test` (the `test/budgets/` folder, about 8 s). Counted exactly on real Miniflare D1 through the real app and real sessions. | `apps/worker/test/budgets/statements.test.ts` (the counter is `test/support/count-statements.ts`) |
 
 The web limits were re-set on the new layout (D-10) on 2026-10-09.
 

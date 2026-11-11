@@ -1,4 +1,4 @@
-import type { DB } from "@cfmail/db";
+import type { DB } from "@cfx-mail/db";
 import type { Auth, User } from "./auth.ts";
 
 export interface Env {

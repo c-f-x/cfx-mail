@@ -1,5 +1,5 @@
-import { mailbox, message } from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
+import { mailbox, message } from "@cfx-mail/db/schema";
+import { Perm } from "@cfx-mail/shared/permissions";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { contactsRoutes } from "../../src/api/contacts.ts";
