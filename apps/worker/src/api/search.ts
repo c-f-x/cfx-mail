@@ -1,13 +1,15 @@
-import { domain, mailbox, mailboxMember } from "@cfmail/db/schema";
-import { has, Perm } from "@cfmail/shared/permissions";
+import { domain, mailbox } from "@cfmail/db/schema";
+import { Perm } from "@cfmail/shared/permissions";
 import type { SearchResultsDto } from "@cfmail/shared/responses";
 import { type SearchFilters, type SearchIn, searchFilters } from "@cfmail/shared/schemas";
-import { and, eq, or } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { dbFromCtx } from "../db.ts";
 import type { AppBindings } from "../env.ts";
 import { requireUser } from "../middleware.ts";
+import { accessibleMailboxIds } from "../permissions.ts";
+import { validationMessage } from "./validate.ts";
 
 export function searchRoutes() {
   const r = new Hono<AppBindings>()
@@ -17,33 +19,25 @@ export function searchRoutes() {
       const db = dbFromCtx(c);
       const user = c.get("user")!;
       const parsed = searchFilters.safeParse(c.req.query());
-      if (!parsed.success) throw new HTTPException(400, { message: "invalid search filters" });
+      if (!parsed.success) {
+        throw new HTTPException(400, { message: validationMessage(parsed.error) });
+      }
       const f = parsed.data;
 
-      // Resolve every mailbox the caller may read (owned + shared with READ) in one
-      // pass: left-join membership so an owner row has a null perms.
-      const readable = await db
-        .select({
-          id: mailbox.id,
-          localPart: mailbox.localPart,
-          domainName: domain.name,
-          ownerUserId: mailbox.ownerUserId,
-          perms: mailboxMember.perms,
-        })
-        .from(mailbox)
-        .innerJoin(domain, eq(mailbox.domainId, domain.id))
-        .leftJoin(
-          mailboxMember,
-          and(eq(mailboxMember.mailboxId, mailbox.id), eq(mailboxMember.userId, user.id)),
-        )
-        .where(or(eq(mailbox.ownerUserId, user.id), eq(mailboxMember.userId, user.id)));
+      // Which mailboxes the caller may read is permissions.ts's answer (owned or
+      // shared with READ, not being purged). Search only adds their addresses,
+      // for display.
+      const readableIds = await accessibleMailboxIds(db, user.id, { perm: Perm.READ });
+      const readable = readableIds.length
+        ? await db
+            .select({ id: mailbox.id, localPart: mailbox.localPart, domainName: domain.name })
+            .from(mailbox)
+            .innerJoin(domain, eq(mailbox.domainId, domain.id))
+            .where(inArray(mailbox.id, readableIds))
+        : [];
 
       const addressById = new Map<string, string>();
-      for (const m of readable) {
-        if (m.ownerUserId === user.id || (m.perms != null && has(m.perms, Perm.READ))) {
-          addressById.set(m.id, `${m.localPart}@${m.domainName}`);
-        }
-      }
+      for (const m of readable) addressById.set(m.id, `${m.localPart}@${m.domainName}`);
 
       // Scope to the requested mailbox(es) ("all"/blank = every readable one; a
       // comma-separated list of ids = just those, intersected with what's readable).

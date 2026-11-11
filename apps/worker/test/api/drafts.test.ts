@@ -167,6 +167,22 @@ describe("drafts", () => {
     expect(body.drafts.every((d) => d.userId === owner.id)).toBe(true);
   });
 
+  it("clamps the page size: limit=-1 is one row, not every row", async () => {
+    await createDraft(asOwner(), { subject: "first" });
+    await createDraft(asOwner(), { subject: "second" });
+    for (const [limit, expected] of [
+      ["-1", 1],
+      ["0", 1],
+      ["abc", 2],
+    ] as const) {
+      // eslint-disable-next-line no-await-in-loop -- independent cases, in order
+      const res = await request(asOwner(), "GET", `/?mailboxId=${MAILBOX_ID}&limit=${limit}`);
+      expect(res.status).toBe(200);
+      // eslint-disable-next-line no-await-in-loop
+      expect(((await res.json()) as { drafts: unknown[] }).drafts).toHaveLength(expected);
+    }
+  });
+
   it("scopes drafts to the author — a member with READ sees none of the owner's", async () => {
     await grantMember(db(), Perm.READ);
     await createDraft(asOwner());

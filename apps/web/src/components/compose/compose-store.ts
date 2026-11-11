@@ -16,7 +16,7 @@ export interface ComposeState {
   initialCc?: string[];
   initialBcc?: string[];
   initialSubject?: string;
-  // Pre-fills the body (plain text). Used by AI smart-reply to seed a draft.
+  // Pre-fills the body (plain text). Seeded from a mailto: link.
   initialBody?: string;
   // When set, the composer reopens an existing server-persisted draft.
   draft?: DraftRow | null;
@@ -105,6 +105,17 @@ function seedMailto(s: Partial<ComposeState>): string {
 export function composeWindowUrl(s: Partial<ComposeState>): string {
   const mailto = seedMailto(s);
   return mailto === "mailto:" ? "/compose" : `/compose?mailto=${encodeURIComponent(mailto)}`;
+}
+
+/** Saving the draft before a pop-out: the draft's id (null when nothing was typed), or a failure. */
+export type DraftSaveResult = { ok: true; id: string | null } | { ok: false };
+
+// Where the pop-out window goes: the saved draft, or with nothing typed the
+// seeded fields. Null when the save failed, so the text stays in the dock
+// instead of a window opening without it.
+export function popOutUrl(saved: DraftSaveResult, s: Partial<ComposeState>): string | null {
+  if (!saved.ok) return null;
+  return saved.id ? `/compose?draft=${encodeURIComponent(saved.id)}` : composeWindowUrl(s);
 }
 
 // Remount key for a seeded (mailto) compose: clicking a second mailto link

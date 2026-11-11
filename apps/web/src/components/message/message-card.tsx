@@ -1,20 +1,9 @@
 import { Flag, hasFlag } from "@cfmail/shared/flags";
 import type { AttachmentDto } from "@cfmail/shared/responses";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Download,
-  FileText,
-  Forward,
-  Image,
-  Paperclip,
-  Reply,
-  ReplyAll,
-  ShieldCheck,
-  Star,
-} from "lucide-react";
+import { Download, FileText, Image, Paperclip, ShieldCheck, Star } from "lucide-react";
 import { useState } from "react";
 import { CodeBanner } from "@/components/code-banner.tsx";
-import { openCompose } from "@/components/compose-dock.tsx";
 import { EmailFrame } from "@/components/email-frame.tsx";
 import { LabelChips } from "@/components/labels-menu.tsx";
 import { MessageMenu } from "@/components/message-menu.tsx";
@@ -25,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton.tsx";
 import { Tooltip } from "@/components/ui/tooltip.tsx";
 import { cn } from "@/lib/cn.ts";
 import { linkifyText } from "@/lib/linkify.tsx";
+import { showSenderControlledBanners } from "@/lib/message-trust.ts";
 import { useDateTimeFmt } from "@/lib/prefs.ts";
 import type { MessageRow } from "@/lib/queries.ts";
 import { messageBodyQuery } from "@/lib/queries.ts";
@@ -37,51 +27,6 @@ import { SenderLock } from "./sender-lock.tsx";
 
 function addrList(list: { name?: string; address: string }[]): string {
   return list.map((a) => a.name ?? a.address).join(", ");
-}
-
-// Reply / reply-all / forward, grouped as a single segmented control.
-function MessageActions({ msg }: { msg: MessageRow }) {
-  return (
-    <div className="flex items-center overflow-hidden rounded-lg border bg-background shadow-black/[0.03] shadow-sm">
-      <ActionIcon label="Reply" onClick={() => openCompose({ replyToMessage: msg })}>
-        <Reply />
-      </ActionIcon>
-      <span className="h-5 w-px bg-border" />
-      <ActionIcon
-        label="Reply all"
-        onClick={() => openCompose({ replyToMessage: msg, replyAll: true })}
-      >
-        <ReplyAll />
-      </ActionIcon>
-      <span className="h-5 w-px bg-border" />
-      <ActionIcon label="Forward" onClick={() => openCompose({ forwardMessage: msg })}>
-        <Forward />
-      </ActionIcon>
-    </div>
-  );
-}
-
-function ActionIcon({
-  label,
-  onClick,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <Tooltip label={label}>
-      <button
-        type="button"
-        onClick={onClick}
-        aria-label={label}
-        className="grid size-8 place-items-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground focus-visible:outline-none [&_svg]:size-4"
-      >
-        {children}
-      </button>
-    </Tooltip>
-  );
 }
 
 function formatBytes(bytes: number): string {
@@ -181,6 +126,7 @@ export function MessageCard({
   onRestore,
   onDelete,
   busy,
+  threadSpam,
   onToggleStar,
 }: {
   msg: MessageRow;
@@ -190,13 +136,19 @@ export function MessageCard({
   onRestore?: () => void;
   onDelete?: () => void;
   busy?: boolean;
+  /** The thread sits in Spam. */
+  threadSpam: boolean;
   onToggleStar: () => void;
 }) {
-  // The body isn't in the thread payload (listing only carries the snippet);
-  // fetch the full parsed body lazily when the card mounts.
-  const { data: bodyData, isPending: bodyPending } = useQuery(messageBodyQuery(msg.id));
+  // The rendered body (HTML, attachments, calendar invite) is not in the thread
+  // payload. It loads when the card mounts, in one request with the bodies of
+  // the other cards that mount with it (lib/body-batcher.ts).
+  const { data: bodyData, isPending: bodyPending } = useQuery(
+    messageBodyQuery(msg.id, msg.threadId),
+  );
   const fmt = useDateTimeFmt();
   const bodyHtml = bodyData?.html ? sanitizeEmailHtml(bodyData.html) : null;
+  const senderBanners = showSenderControlledBanners(msg, threadSpam);
   const starred = hasFlag(msg.flags, Flag.STARRED);
   const when = new Date(msg.sentAt ?? msg.receivedAt ?? msg.createdAt);
 
@@ -212,11 +164,17 @@ export function MessageCard({
             <SenderLock msg={msg} />
             <span className="truncate">
               {msg.fromName ?? msg.fromAddr}{" "}
-              <span className="font-normal text-muted-foreground">&lt;{msg.fromAddr}&gt;</span>
+              <span className="hidden font-normal text-muted-foreground sm:inline">
+                &lt;{msg.fromAddr}&gt;
+              </span>
             </span>
           </div>
           <div className="space-y-0.5 text-[11px] text-muted-foreground">
-            <div>
+            {/* On a phone the address and date move under the name, out of the crowded row. */}
+            <div className="truncate sm:hidden">
+              {msg.fromAddr} · {formatDateTime(when, fmt)}
+            </div>
+            <div className="truncate">
               <span className="text-muted-foreground/70">to</span> {addrList(msg.toAddrs)}
             </div>
             {msg.ccAddrs && msg.ccAddrs.length > 0 && (
@@ -232,7 +190,7 @@ export function MessageCard({
           </div>
           <LabelChips messageId={msg.id} className="mt-1.5" />
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-2">
+        <div className="flex shrink-0 items-center">
           <div className="flex items-center gap-1.5">
             {bodyData && bodyData.trackersBlocked > 0 && (
               <Tooltip
@@ -246,7 +204,7 @@ export function MessageCard({
               </Tooltip>
             )}
             <time
-              className="text-[11px] text-muted-foreground"
+              className="hidden text-[11px] text-muted-foreground sm:inline"
               title={when.toLocaleString(undefined, { hour12: fmt.hour12 })}
             >
               {formatDateTime(when, fmt)}
@@ -268,26 +226,28 @@ export function MessageCard({
             <MessageMenu
               msg={msg}
               body={bodyData}
+              replyable={!readOnly}
               onTrash={onTrash}
               onRestore={onRestore}
               onDelete={onDelete}
               busy={busy}
             />
           </div>
-          {!readOnly && <MessageActions msg={msg} />}
         </div>
       </header>
       <SpamBanner msg={msg} />
-      <CodeBanner
-        from={msg.fromAddr}
-        subject={msg.subject}
-        text={bodyData?.text}
-        html={bodyData?.html}
-        direction={msg.direction}
-      />
+      {senderBanners && (
+        <CodeBanner
+          from={msg.fromAddr}
+          subject={msg.subject}
+          text={bodyData?.text}
+          html={bodyData?.html}
+          direction={msg.direction}
+        />
+      )}
       <PgpBanner msg={msg} readOnly={readOnly} />
-      <UnsubscribeBanner msg={msg} readOnly={readOnly} />
-      {bodyData?.calendar && <CalendarBanner event={bodyData.calendar} />}
+      {senderBanners && <UnsubscribeBanner msg={msg} readOnly={readOnly} />}
+      {senderBanners && bodyData?.calendar && <CalendarBanner event={bodyData.calendar} />}
       {bodyPending ? (
         // Hold the space with a skeleton while the body loads. Rendering the
         // snippet here flashed a plain-text preview that then got replaced by the

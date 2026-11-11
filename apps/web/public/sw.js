@@ -36,7 +36,7 @@ self.addEventListener("fetch", (event) => {
           // Clone *before* returning `res` — once it's streamed to the page the
           // body is consumed and a later clone throws.
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(SHELL, copy));
+          void caches.open(CACHE).then((c) => c.put(SHELL, copy));
           return res;
         })
         .catch(() => caches.match(SHELL).then((r) => r || Response.error())),
@@ -52,7 +52,7 @@ self.addEventListener("fetch", (event) => {
           // Clone synchronously, before the body is consumed downstream.
           if (res.ok) {
             const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
+            void caches.open(CACHE).then((c) => c.put(req, copy));
           }
           return res;
         })

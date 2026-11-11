@@ -3,7 +3,9 @@ import type { ReactNode } from "react";
 // Bare URLs and email addresses in plain-text bodies arrive as text, so turn
 // them into real anchors (HTML bodies already get theirs from the sanitizer).
 // New tab + severed opener mirrors sanitize-email's anchor policy.
-const TOKEN = /(https?:\/\/[^\s<]+)|(\bwww\.[^\s<]+)|([^\s<@]+@[^\s<@]+\.[^\s<@]+)/gi;
+// The address alternative is bounded like the one in sanitize-email.ts.
+const TOKEN =
+  /(https?:\/\/[^\s<]+)|(\bwww\.[^\s<]+)|([^\s<@]{1,64}@[^\s<@]{1,255}\.[^\s<@]{1,255})/gi;
 const TRAILING = /[.,;:!?)\]}>'"]+$/;
 
 export function linkifyText(text: string): ReactNode[] {

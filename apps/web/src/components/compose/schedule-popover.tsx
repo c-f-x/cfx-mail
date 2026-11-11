@@ -5,21 +5,7 @@ import { Calendar } from "@/components/ui/calendar.tsx";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover.tsx";
 import { Separator } from "@/components/ui/separator.tsx";
-
-// ── Scheduled-send time helpers ──────────────────────────────────────────────
-// Stamp a "HH:mm" wall-clock time onto a calendar day, in the user's local zone.
-function combineDateTime(day: Date, time: string): Date {
-  const [h, m] = time.split(":").map(Number);
-  const out = new Date(day);
-  out.setHours(h ?? 0, m ?? 0, 0, 0);
-  return out;
-}
-
-function atHour(d: Date, hour: number): Date {
-  const out = new Date(d);
-  out.setHours(hour, 0, 0, 0);
-  return out;
-}
+import { atHour, combineDateTime, isBeforeDay } from "@/lib/time.ts";
 
 // The next occurrence of `weekday` (0=Sun..6=Sat) at `hour`, always in the
 // future — today counts only if `hour` hasn't passed yet.
@@ -103,7 +89,7 @@ export function SchedulePopover({ open, onOpenChange, disabled, pending, onSched
             mode="single"
             selected={customDate}
             onSelect={setCustomDate}
-            disabled={{ before: new Date() }}
+            disabled={(day) => isBeforeDay(day, new Date())}
             className="p-0"
           />
           <InputGroup className="mt-1.5">

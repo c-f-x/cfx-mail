@@ -1,216 +1,127 @@
-# cloudflare-mail
+# cf-mail
 
-A self-hostable, Gmail-style mail client that runs entirely on Cloudflare — one Worker serves the React app, the REST API, inbound mail (`email()`), IMAP over inbound TCP (`connect()`), and scheduled cleanup (`scheduled()`).
+**Mailboxes for your own domains, run on Cloudflare.** People read and send mail in the browser, at addresses on your domains. Your projects send their own mail, such as sign-in links, through an API key.
 
-- **Four mailbox types**, all first-class with RBAC from day one:
-  - `personal` — individual inbox
-  - `group` — shared inbox with per-user READ / WRITE / MANAGE bit flags
-  - `service` — send-only (no-reply style); inbound to these addresses is rejected
-  - `temp` — disposable, TTL-based, random local-part, auto-collected by cron
-- **Multi-domain** across primary + sub-domains
-- **Gmail-style UI** — 3-pane layout, compose dock, SSE-driven live updates
-- **Full-text search** over subjects, bodies, and recipients (D1 FTS5)
-- **Organization** — labels, folders, reminders, and per-mailbox automation rules
-- **Inbound pipeline** — threading, spam scoring (auth + heuristics + optional Spamhaus and Workers AI), gateway PGP decrypt, one-click unsubscribe, calendar (`.ics`) parsing, blocklist
-- **IMAP4rev1 server** — read your mail in Apple Mail, Thunderbird or Outlook, with `IDLE` push, per-mailbox app passwords, and the same RBAC as the web app
-- **Push notifications** and a tracking-pixel image proxy
-- **Sender brand logos** — BIMI lookups, sanitized and cached, shown in the web app and on iOS
-- **Native iOS app** — SwiftUI client on the same API and SSE stream (`apps/ios`)
-- **Everything on Cloudflare** — no external database, no SMTP servers to run
+cf-mail is one Cloudflare Worker with a D1 database and an R2 bucket. There is no server to run and no mail server to keep patched. Cloudflare Email Routing brings mail in and Email Sending takes it out.
 
-> Status: actively developed. Auth, RBAC, inbound/outbound mail, threading, search, labels/folders/rules, spam, PGP, reminders, calendar, push, temp GC, and SSE are wired end-to-end, with a Vitest suite covering the worker pipelines. Contributions welcome.
->
-> IMAP is built and tested but needs Cloudflare's **inbound TCP for Workers** (private beta at time of writing) plus a Spectrum application to reach it — see [IMAP access](#6-imap-access-optional).
+![The cf-mail inbox across several accounts, with a conversation open. The mail is made up.](docs/images/cf-mail.png)
 
-## Stack
-
-| Layer         | Choice                                                             |
-| ------------- | ------------------------------------------------------------------ |
-| Runtime       | Cloudflare Workers (single Worker: `fetch` + `email` + `scheduled` + `connect` + Durable Objects) |
-| Storage       | D1 (SQLite, metadata), R2 (raw MIME + attachments), DO (SSE fan-out) |
-| Inbound       | Cloudflare Email Routing → Worker `email()` handler                |
-| IMAP          | Cloudflare Spectrum (TLS terminated) → Worker `connect()` handler  |
-| Outbound      | Cloudflare Email Service (`env.EMAIL.send()`)                      |
-| Auth          | [Better Auth](https://better-auth.com) on D1                       |
-| MIME          | [postal-mime](https://github.com/postalsys/postal-mime) (parse), [mimetext](https://github.com/muratgozel/MIMEText) (build for archived copy) |
-| API           | [Hono](https://hono.dev) + [Drizzle ORM](https://orm.drizzle.team) |
-| Frontend      | React 19, Vite, Tailwind v4, shadcn/ui, TanStack Router + Query    |
-| Tooling       | pnpm · Turborepo · Biome v2 · oxlint · tsc (TypeScript 7, native) |
-
-## Architecture
-
-One Worker owns every code path. There is no separate API service, no message queue worker, no static-asset host — just `apps/worker` with the bindings declared in `apps/worker/wrangler.jsonc`.
-
-```mermaid
-flowchart LR
-  Browser["Browser SPA<br/>(apps/web)"]
-  Inbound["Cloudflare<br/>Email Routing"]
-  MailApp["Mail app<br/>(IMAP client)"]
-  Cron["Cloudflare<br/>Cron Trigger"]
-  Sender["Outbound recipient<br/>(env.EMAIL.send)"]
-
-  subgraph Worker["apps/worker (single Worker)"]
-    direction TB
-    Fetch["fetch()<br/>Hono API + SPA assets"]
-    Email["email()<br/>inbound handler"]
-    Connect["connect()<br/>IMAP4rev1 server"]
-    Scheduled["scheduled()<br/>temp-mailbox GC"]
-    Hub["UserHub<br/>(Durable Object, SSE fan-out)"]
-  end
-
-  D1[("D1<br/>metadata")]
-  R2[("R2<br/>raw MIME + attachments")]
-  Assets[("ASSETS<br/>Vite build")]
-
-  Browser -- "/api/* (fetch + SSE)" --> Fetch
-  Browser -- "/ (static)" --> Assets
-  Assets --> Fetch
-  Inbound --> Email
-  MailApp -- "TCP 993 via Spectrum" --> Connect
-  Cron --> Scheduled
-  Fetch --> D1
-  Fetch --> R2
-  Fetch --> Hub
-  Email --> D1
-  Email --> R2
-  Email --> Hub
-  Connect --> D1
-  Connect --> R2
-  Hub -- "IDLE wake-ups" --> Connect
-  Scheduled --> D1
-  Scheduled --> R2
-  Fetch -- "compose / reply" --> Sender
-  Hub -- "SSE events" --> Browser
-```
-
-Bindings the Worker depends on (see `wrangler.jsonc`):
-
-| Binding     | Type            | Purpose                                                          |
-| ----------- | --------------- | ---------------------------------------------------------------- |
-| `DB`        | D1              | Mailboxes, threads, messages, RBAC, FTS5 search                  |
-| `BLOBS`     | R2              | Raw inbound `.eml`, archived sent copies, attachments, drafts    |
-| `EMAIL`     | Send Email      | Outbound `env.EMAIL.send()` via Cloudflare Email Sending         |
-| `USER_HUB`  | Durable Object  | Per-user SSE fan-out (`message_*`, `mailbox_*` events)           |
-| `ASSETS`    | Static Assets   | Vite-built SPA, SPA fallback, `/api/*` routed to Worker first    |
-| Cron        | `*/1 * * * *`   | `scheduled()` deletes expired temp mailboxes + their R2 keys     |
-| Email route | Email Routing   | `email()` parses inbound, stores in R2/D1, broadcasts via DO     |
-
-## Structure
-
-```
-apps/
-  ios/       # Native SwiftUI client (Xcode project, no dependencies)
-  web/       # Vite + React 19 SPA (served as Static Assets from the Worker)
-  worker/    # Cloudflare Worker — fetch + email + scheduled + UserHub DO
-packages/
-  db/        # Drizzle schema + D1 migrations
-  shared/    # Zod schemas, permission bits, event types
-```
-
-Key files to orient from:
-
-- `apps/worker/src/index.ts` — handler exports
-- `apps/worker/src/mail/receive.ts`, `apps/worker/src/mail/send.ts` — mail pipelines
-- `apps/worker/src/imap/` — IMAP wire protocol, session state machine, mail-model bridge
-- `apps/worker/src/permissions.ts` — single RBAC checker
-- `apps/worker/src/hub.ts` — SSE fan-out Durable Object
-- `packages/db/src/schema.ts` — data model
-- `apps/ios/README.md` — the iOS app (same API, same SSE stream, nothing extra to deploy)
-
-## Quick start
-
-The goal: fork, connect the repo to Cloudflare, open the URL, create the admin account in the browser. Deploys happen automatically on every push to `main` via Workers Builds — no `wrangler deploy`, no `wrangler secret put`, no editing env vars in `wrangler.jsonc`. Per-domain config (which mailbox kinds, who can create what) is configured in the in-app admin panel.
-
-### 1. Prerequisites
-
-- A Cloudflare account on the **Workers Paid** plan (Email Sending requires it)
-- A domain on Cloudflare with **Email Routing** enabled (per email-domain DNS still needs the standard MX + SPF/DKIM/DMARC records — the admin UI shows you what to paste)
-- Node 22+, pnpm 12+
-
-### 2. Install
+A project sends mail with one request:
 
 ```bash
-git clone https://github.com/Newspicel/cloudflare-mail.git
-cd cloudflare-mail
-pnpm install
+curl -sS -X POST "https://mail.example.com/api/svc/send" \
+  -H "Authorization: Bearer $CFMAIL_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"to":[{"address":"person@example.org"}],"subject":"Your sign-in link","text":"Open https://app.example.org/magic?token=abc"}'
+# 201 {"messageId":"…","threadId":"…"}
 ```
 
-### 3. Provision resources (one time)
+The key belongs to a service mailbox, which an admin makes in the app. The mail goes out from that mailbox's address, and a copy is kept in it.
+
+## What it does
+
+- Four kinds of mailbox. A personal mailbox belongs to one person. A group mailbox is shared, with read, write or manage rights for each member. A temporary address deletes itself. A service mailbox is for a project's code.
+- Several domains in one deployment. One sign-in reaches every mailbox a person has, across domains, with an inbox that shows them all.
+- The usual mail work: conversations, search, labels, folders, rules (with auto-reply and forwarding), reminders, scheduled sending, drafts, signatures and push notifications.
+- Checks on incoming mail: sender authentication (SPF, DKIM, DMARC), spam scoring, public DNS blocklists and a blocklist of your own.
+- Privacy for readers: remote images load through the Worker, tracking pixels are removed, and location data is stripped from attached photos.
+- One-click unsubscribe, for mail you receive and for mail your projects send to many people.
+- Aliases and catch-alls that deliver into any mailbox, also on another domain.
+- Backups to a folder on your own machine, with restore (`docs/runbooks/backup-and-restore.md`).
+
+## What it doesn't do
+
+- Mail apps cannot connect. IMAP is built, but Cloudflare cannot expose it to the internet yet, so it is switched off (decision D-7).
+- PGP is built and switched off (D-7).
+- The send API takes text and HTML, and no attachments.
+- Admins sign in only with a Cloudflare login that is a member of the deployment's account. There is no admin password (D-13, D-14).
+- Nobody can sign up. An admin invites each person.
+- There is no install button yet. Setting up a deployment takes the steps in `AGENTS.md`, section 4.
+
+## Install
+
+You need a Cloudflare account on the Workers Paid plan, and a domain on Cloudflare with Email Routing and Email Sending turned on.
+
+1. Create a D1 database and an R2 bucket for the deployment.
+2. Write the deployment's values into a site file, `cf-mail.jsonc`, in a folder of your own outside this repository. The format is at the top of `scripts/site-config.mjs`.
+3. Set three Worker secrets: `AUTH_SECRET`, and the client id and secret of a Cloudflare OAuth app for admin sign-in.
+4. Deploy, with `CFX_SITE` pointing at the folder that holds the site file:
+
+   ```bash
+   CFX_SITE=~/my-site npx -y pnpm@12.4.1 run deploy <name>
+   ```
+
+   This builds the app, applies the database migrations and deploys the Worker.
+
+The full procedure, with every command, is in `AGENTS.md`, section 4. It is written so a coding agent can follow it, and so can you.
+
+## Work on it locally
 
 ```bash
-# D1 database — copy the printed database_id into apps/worker/wrangler.jsonc
-pnpm --filter @cfmail/worker exec wrangler d1 create cfmail
-
-# R2 bucket (name is referenced from wrangler.jsonc)
-pnpm --filter @cfmail/worker exec wrangler r2 bucket create cfmail-blobs
+npx -y pnpm@12.4.1 install
+npx -y pnpm@12.4.1 --filter @cfmail/db migrate:local
+npx -y pnpm@12.4.1 --filter @cfmail/web build
+cd apps/worker && node_modules/.bin/wrangler dev --local
 ```
 
-Commit the updated `wrangler.jsonc` (with the new `database_id`) and push.
+Open the address Wrangler prints and sign in there. The Worker refuses sign-in through Vite's port. `--local` keeps the email binding on your machine; without it, local development sends real mail. To create the first admin locally, put `SETUP_TOKEN=<any value>` in `apps/worker/.dev.vars`. `node scripts/seed-local.mjs` fills the local app with made-up mail.
 
-### 4. Connect the repo to Workers Builds
-
-Deploys are handled by Cloudflare Workers Builds — connect once and every push to `main` builds and ships automatically.
-
-1. Cloudflare dashboard → **Workers & Pages** → your worker → **Settings → Build**.
-2. **Connect** your fork of the repo.
-3. Set:
-   - **Build command:** `pnpm run build`
-   - **Deploy command:** `pnpm run deploy`
-   - **Root directory:** `/`
-   - **Production branch:** `main`
-4. Save. The next push to `main` (or a manual "Retry build") builds the web app and Worker, runs the production D1 migrations, and deploys.
-
-That's the whole deploy. The `deploy` script applies pending migrations (`@cfmail/db migrate --remote`) before `wrangler deploy`, so schema changes ship with the code. No secrets to set: the auth secret is lazy-generated on first request and stored in D1 (`system_config`). The app URL is derived from the request `Host` header, so whatever custom domain you bind to the Worker in the Cloudflare dashboard becomes your app URL automatically.
-
-> Prefer the CLI? You can still deploy by hand with `pnpm run deploy` from a checkout authenticated via `wrangler login`.
-
-### 5. First-run setup (in the browser)
-
-1. Bind a custom domain to the deployed Worker (Cloudflare dashboard → Workers → your worker → Custom Domains).
-2. Open that URL. The first visit shows a **Create administrator** form — this becomes the system admin.
-3. Sign in. From the admin panel:
-   - **Domains** tab → add the email domains you'll use, and tick which mailbox kinds each allows (`personal`, `group`, `service`, `temp`). The DNS-health badges and DNS records you need are shown inline.
-   - **Users** tab → invite teammates (email link) or create accounts directly. Per-user, per-domain mailbox-kind grants live here.
-   - Set the **Transactional email** from-address (must be on a verified Email Sending domain) so password reset and invite emails can go out.
-   - Optional, **Blocking** tab → paste a [Spamhaus DQS](https://portal.spamhaus.com/dqs/) query key to switch on reputation lookups: ZEN on the connecting host, DBL + ZRD on the sender, EHLO and link domains, AuthBL on IMAP logins, and — on plans that include the Hash Blocklist — HBL on links, addresses, crypto wallets and attachments. Listed senders are refused at SMTP with the listing named; content signals only raise the spam score. The key is verified against Spamhaus' test points before it is stored, which is also how the plan's datasets are detected. Without one these lookups are skipped — the free public zones refuse queries that arrive via a Worker's DoH resolver.
-4. In Cloudflare: enable **Email Routing** per zone, route catch-all → this Worker, and verify the zone under **Email Sending**.
-
-### 6. IMAP access (optional)
-
-Mail apps talk to the same Worker over TCP. Cloudflare Spectrum terminates TLS and routes the raw socket to the `connect()` handler, so there is no separate IMAP server to run and no `STARTTLS` — connect on the implicit-TLS port.
-
-1. In the Cloudflare dashboard, create a **Spectrum application**: TCP, port `993`, origin = this Worker. (Inbound TCP for Workers is in private beta — you may need to request access.)
-2. In the app's admin panel → **Domains** tab → **IMAP access**, enter that Spectrum hostname and port. Until this is set, the app hides IMAP from users.
-3. Each user creates their own credentials in **Settings → IMAP access**: pick a mailbox, name the device, and copy the generated app password (shown once).
-
-Client settings are then: server = the Spectrum hostname, port `993`, SSL/TLS, username = the mailbox address, password = the app password. One password unlocks one mailbox; revoking it cuts that client off immediately, and losing access to a shared mailbox revokes it automatically.
-
-Folders map onto the app's own model: `INBOX`, `Sent`, `Spam`, `Trash`, plus each of your custom folders. Moving mail, flagging it, and deleting it in a mail app shows up in the web UI live, and vice versa.
-
-### 7. Local dev
+The checks CI runs:
 
 ```bash
-pnpm --filter @cfmail/db migrate:local
-pnpm dev          # Vite (:5173) + Wrangler (:8787), Vite proxies /api
+pnpm lint && pnpm typecheck && pnpm build && pnpm test
 ```
 
-## Verification commands
+## How it is built
 
-```bash
-pnpm typecheck    # tsc (TypeScript 7) across all packages
-pnpm lint         # oxlint + biome check
-pnpm test         # Vitest (worker pipelines + IMAP server)
-pnpm build        # Vite + Wrangler dry-run
+One Worker does everything. It serves the React app and the API, receives mail from Email Routing, sends through Email Sending, and runs a job every minute. D1 holds mailboxes and messages, R2 holds raw mail and attachments, and a Durable Object pushes live updates to open browsers.
+
+| Part | Choice |
+|---|---|
+| Runtime | Cloudflare Workers |
+| Storage | D1 (SQLite with full-text search), R2, a Durable Object for live updates |
+| Mail in and out | Cloudflare Email Routing and Email Sending |
+| Sign-in | [Better Auth](https://better-auth.com): passwords, passkeys, two-factor codes, and Cloudflare sign-in for admins |
+| API | [Hono](https://hono.dev), [Drizzle ORM](https://orm.drizzle.team) |
+| Web app | React 19, Vite, Tailwind, [shadcn/ui](https://ui.shadcn.com), TanStack Router and Query |
+| Tooling | pnpm, Turborepo, TypeScript 7, Biome, oxlint, Vitest on the Workers runtime |
+
+```
+apps/web/         the browser app
+apps/worker/      the Worker: API, mail in and out, scheduled jobs
+packages/db/      database schema and migrations
+packages/shared/  code both sides use: input schemas, permissions
+scripts/          deploy, backup, restore, and the repository checks
+docs/             how it works and why
 ```
 
-## Contributing
+| File | What it covers |
+|---|---|
+| `AGENTS.md` | Setting up domains and deployments, managing accounts, safe changes |
+| `docs/architecture.md` | How the system works, and the rules that keep it safe, each with its check |
+| `docs/config-reference.md` | Every setting, secret and binding |
+| `docs/data-model.md` | What each store keeps, for how long, and what removes it |
+| `docs/decisions.md` | Decisions made, with their reasons |
+| `docs/code-structure.md` | Where code lives |
+| `docs/runbooks/` | Backup and restore, monitoring |
+| `CONTRIBUTING.md` | How to propose a change |
+| `SECURITY.md` | How to report a vulnerability |
 
-Issues and PRs welcome — see [`CONTRIBUTING.md`](./CONTRIBUTING.md) for branching, required checks, and how to run locally against a real Cloudflare account. TL;DR:
+## Credits
 
-- Keep the toolchain (tsc / Biome / oxlint / pnpm / Turborepo) — don't swap pieces without discussion.
-- Run `pnpm typecheck && pnpm lint && pnpm build && pnpm test` before opening a PR.
-- If you use AI tooling, read `AGENTS.md` first — it captures the invariants that make the project safe to change.
+cf-mail began as a copy of [cloudflare-mail](https://github.com/Newspicel/cloudflare-mail) by Julian Haag, under the MIT licence. Its history up to the copy is kept in this repository, so his work stays under his name.
+
+Each deployment downloads two community tracker lists once a day to find tracking pixels. They are not part of this repository, and their own licences apply:
+
+- [MailTrackerBlocker](https://github.com/apparition47/MailTrackerBlocker) by apparition47 (BSD 3-Clause)
+- the email-tracker section of [EasyPrivacy](https://github.com/easylist/easylist) by the EasyList authors (GPLv3 and CC BY-SA 3.0)
+
+The interface components in `apps/web/src/components/ui/` start from [shadcn/ui](https://ui.shadcn.com) (MIT).
+
+## Support
+
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/jahala)
 
 ## License
 
-[MIT](./LICENSE)
+[MIT](./LICENSE).

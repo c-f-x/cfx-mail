@@ -1,5 +1,8 @@
-import type { LucideIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { CircleAlert, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn.ts";
+import { describeRouteError } from "@/lib/route-error.ts";
+import { Button, buttonVariants } from "./ui/button.tsx";
 import { Skeleton } from "./ui/skeleton.tsx";
 
 export function EmptyState({
@@ -34,12 +37,52 @@ export function EmptyState({
   );
 }
 
+/** A load that failed. Not an empty state: the data may well exist. */
+/** A list or conversation that failed to load, worded for what went wrong. */
+export function LoadError({
+  error,
+  onRetry,
+  className,
+}: {
+  error: unknown;
+  onRetry: () => void;
+  className?: string;
+}) {
+  const { title, hint, retry } = describeRouteError(error);
+  return (
+    <EmptyState
+      icon={CircleAlert}
+      title={title}
+      hint={hint}
+      className={className}
+      action={
+        <div className="flex items-center gap-2">
+          {retry && (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              Try again
+            </Button>
+          )}
+          <BackToInbox />
+        </div>
+      }
+    />
+  );
+}
+
+export function BackToInbox() {
+  return (
+    <Link to="/app" className={buttonVariants({ variant: "outline", size: "sm" })}>
+      Back to inbox
+    </Link>
+  );
+}
+
 /** Unread-count pill. Clamps at 99+ and hides itself at zero. */
 export function UnreadBadge({ count, className }: { count: number; className?: string }) {
   if (count <= 0) return null;
   return (
     <span
-      // eslint-disable-next-line react-doctor/prefer-tag-over-role -- text pill; role="img"+aria-label makes SR announce "N unread" instead of the raw number; an <img> tag can't hold the text child
+      // text pill; role="img"+aria-label makes SR announce "N unread" instead of the raw number; an <img> tag can't hold the text child
       role="img"
       aria-label={`${count} unread`}
       className={cn(

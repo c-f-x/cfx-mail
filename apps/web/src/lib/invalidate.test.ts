@@ -1,6 +1,14 @@
+import type { ThreadDto } from "@cfmail/shared";
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createThreadChangeCoalescer, invalidateThreadChange } from "./invalidate.ts";
+import {
+  createThreadChangeCoalescer,
+  invalidateThreadChange,
+  patchThreadsInLists,
+  removeThreadsFromLists,
+  restoreSnapshot,
+  snapshotMailboxThreads,
+} from "./invalidate.ts";
 import { keys } from "./query-keys.ts";
 
 function harness() {
@@ -116,5 +124,48 @@ describe("createThreadChangeCoalescer — batching", () => {
     const co = createThreadChangeCoalescer(qc, 1500);
     co.dispose();
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+const thread = (id: string, mailboxId: string) =>
+  ({ id, mailboxId, unreadCount: 1 }) as unknown as ThreadDto;
+
+describe("optimistic list edits reach the All accounts view", () => {
+  function seeded() {
+    const qc = new QueryClient();
+    qc.setQueryData(keys.threads("mb-1", "inbox"), {
+      pages: [{ threads: [thread("t1", "mb-1")] }],
+    });
+    qc.setQueryData(keys.threads("all", "inbox"), {
+      pages: [{ threads: [thread("t1", "mb-1"), thread("t2", "mb-2")] }],
+    });
+    const ids = (mailboxId: string) =>
+      (
+        qc.getQueryData(keys.threads(mailboxId, "inbox")) as {
+          pages: { threads: { id: string; unreadCount: number }[] }[];
+        }
+      ).pages[0]!.threads;
+    return { qc, ids };
+  }
+
+  it("removing a thread from its account's lists removes it from the All accounts list", () => {
+    const { qc, ids } = seeded();
+    removeThreadsFromLists(qc, "mb-1", ["t1"]);
+    expect(ids("mb-1").map((t) => t.id)).toEqual([]);
+    expect(ids("all").map((t) => t.id)).toEqual(["t2"]);
+  });
+
+  it("patching a thread in its account's lists patches it in the All accounts list", () => {
+    const { qc, ids } = seeded();
+    patchThreadsInLists(qc, "mb-1", ["t1"], { unreadCount: 0 });
+    expect(ids("all").find((t) => t.id === "t1")?.unreadCount).toBe(0);
+  });
+
+  it("a snapshot covers the All accounts list, so a failed request restores it", () => {
+    const { qc, ids } = seeded();
+    const snap = snapshotMailboxThreads(qc, "mb-1");
+    removeThreadsFromLists(qc, "mb-1", ["t1"]);
+    restoreSnapshot(qc, snap);
+    expect(ids("all").map((t) => t.id)).toEqual(["t1", "t2"]);
   });
 });

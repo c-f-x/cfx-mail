@@ -108,4 +108,22 @@ describe("folders", () => {
     const listed = await request(asOwner(), "GET", `/${id}/threads`);
     expect(((await listed.json()) as { threads: unknown[] }).threads).toHaveLength(0);
   });
+
+  it("clamps the page size: limit=-1 is one row, not every row", async () => {
+    const id = await makeFolder("Box");
+    const a = await seedThread(db());
+    const b = await seedThread(db());
+    await request(asOwner(), "POST", `/${id}/threads`, { threadIds: [a.threadId, b.threadId] });
+    for (const [limit, expected] of [
+      ["-1", 1],
+      ["0", 1],
+      ["abc", 2],
+    ] as const) {
+      // eslint-disable-next-line no-await-in-loop -- independent cases, in order
+      const res = await request(asOwner(), "GET", `/${id}/threads?limit=${limit}`);
+      expect(res.status).toBe(200);
+      // eslint-disable-next-line no-await-in-loop
+      expect(((await res.json()) as { threads: unknown[] }).threads).toHaveLength(expected);
+    }
+  });
 });

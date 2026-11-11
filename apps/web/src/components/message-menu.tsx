@@ -8,8 +8,11 @@ import {
   Download,
   EllipsisVertical,
   FileText,
+  Forward,
   Mail,
   Printer,
+  Reply,
+  ReplyAll,
   Trash2,
 } from "lucide-react";
 import { useState } from "react";
@@ -19,6 +22,8 @@ import { useDateTimeFmt } from "@/lib/prefs.ts";
 import type { MessageRow } from "@/lib/queries.ts";
 import { sanitizeEmailHtml } from "@/lib/sanitize-email.ts";
 import { type DateTimeFmt, formatDateTime } from "@/lib/time.ts";
+import { openCompose } from "./compose-dock.tsx";
+import { FRAME_CSP, PRINT_SANDBOX } from "./email-frame.tsx";
 import { Button } from "./ui/button.tsx";
 import {
   Dialog,
@@ -59,13 +64,16 @@ function printMessage(msg: MessageRow, body: MessageBodyDto | undefined, fmt: Da
       <div>Date: ${escapeHtml(when)}</div>
     </div>`;
   const doc =
-    `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(msg.subject || "Email")}</title>` +
+    `<!doctype html><html><head><meta charset="utf-8">` +
+    `<meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">` +
+    `<title>${escapeHtml(msg.subject || "Email")}</title>` +
     `<style>body{font:13px/1.5 system-ui,sans-serif;color:#111;margin:24px}` +
     `img,table{max-width:100%}pre{white-space:pre-wrap;font:inherit}` +
     `a{color:#2563eb}</style></head><body>${head}${content}</body></html>`;
 
   const frame = document.createElement("iframe");
   frame.setAttribute("aria-hidden", "true");
+  frame.setAttribute("sandbox", PRINT_SANDBOX);
   frame.style.cssText =
     "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
   frame.addEventListener(
@@ -92,9 +100,12 @@ export function MessageMenu({
   onRestore,
   onDelete,
   busy,
+  replyable = false,
 }: {
   msg: MessageRow;
   body: MessageBodyDto | undefined;
+  /** Offer reply / reply all / forward to this message (the reply bar answers only the newest). */
+  replyable?: boolean;
   // Per-message actions, supplied by the thread view depending on the message's
   // state. Soft-delete into Trash, restore from it, or permanently delete.
   onTrash?: () => void;
@@ -106,7 +117,7 @@ export function MessageMenu({
   const [source, setSource] = useState<Source | null>(null);
   const [loadingRaw, setLoadingRaw] = useState(false);
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- creates an admin-side block request; no client cache to update
+  // creates an admin-side block request; no client cache to update
   const requestBlock = useMutation({
     mutationFn: () =>
       unwrap(rpc.messages[":id"]["block-request"].$post({ param: { id: msg.id }, json: {} })),
@@ -151,6 +162,22 @@ export function MessageMenu({
           render={<IconButton icon={EllipsisVertical} label="More" disabled={loadingRaw} />}
         />
         <DropdownMenuContent>
+          {replyable && (
+            <>
+              <DropdownMenuItem onClick={() => openCompose({ replyToMessage: msg })}>
+                <Reply /> Reply to this message
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => openCompose({ replyToMessage: msg, replyAll: true })}
+              >
+                <ReplyAll /> Reply all to this message
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => openCompose({ forwardMessage: msg })}>
+                <Forward /> Forward this message
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
           <DropdownMenuItem onClick={showRaw}>
             <Mail /> View raw email
           </DropdownMenuItem>

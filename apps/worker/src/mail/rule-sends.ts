@@ -4,6 +4,7 @@ import { mailbox, ruleSendLog } from "@cfmail/db/schema";
 import { and, count, eq, gt } from "drizzle-orm";
 import type { Env } from "../env.ts";
 import { escapeHtml } from "../lib/encoding.ts";
+import { errorText } from "./ingest.ts";
 import { buildMime, type ParsedEmail } from "./mime.ts";
 import type { RuleOutcome } from "./rules.ts";
 
@@ -20,6 +21,12 @@ export interface RuleSendContext {
   outcome: RuleOutcome;
   parsed: ParsedEmail;
   envelopeFrom: string; // SMTP MAIL FROM, for bounce detection
+  // The spam filter or a markSpam rule filed the message as spam. Junk is
+  // neither answered nor relayed: both go out under our sending reputation.
+  filedAsSpam: boolean;
+  // The header From passed DMARC, or SPF and DKIM. An auto-reply to a forged
+  // From is backscatter to someone who never wrote to us.
+  authenticated: boolean;
 }
 
 // Fire a matched rule's outbound actions (forward copies, vacation auto-replies)
@@ -29,6 +36,7 @@ export interface RuleSendContext {
 export async function runRuleSends(env: Env, db: DB, ctx: RuleSendContext): Promise<void> {
   const { outcome } = ctx;
   if (outcome.forwards.length === 0 && outcome.autoReplies.length === 0) return;
+  if (ctx.filedAsSpam) return;
 
   // Hourly budget across all auto-sends for this mailbox.
   const since = new Date(Date.now() - HOUR_MS);
@@ -46,17 +54,19 @@ export async function runRuleSends(env: Env, db: DB, ctx: RuleSendContext): Prom
   const fromName = mb?.displayName ?? undefined;
   const headerFrom = ctx.parsed.from?.address?.trim() || null;
 
-  for (const fwd of outcome.forwards) {
+  // Every forward is stamped with the mailboxes it has passed through. Seeing
+  // our own address there means two mailboxes forward to each other, and the
+  // message has already been round once.
+  const hops = loopHops(ctx.parsed);
+  const looped = hops.some((hop) => hop.toLowerCase() === ctx.selfAddr.toLowerCase());
+
+  for (const fwd of looped ? [] : outcome.forwards) {
     if (budget <= 0) break;
     // Don't forward back to ourselves — that would loop straight back in.
     if (fwd.to.trim().toLowerCase() === ctx.selfAddr.toLowerCase()) continue;
-    const raw = buildForward(ctx, fromName, fwd.to);
+    const raw = buildForward(ctx, fromName, fwd.to, hops);
     // eslint-disable-next-line no-await-in-loop -- sends are gated by the shared hourly budget, so each must settle before the next
-    if (await trySend(env, ctx.selfAddr, fwd.to, raw)) {
-      budget--;
-      // eslint-disable-next-line no-await-in-loop -- sequential by design; see above
-      await logSend(db, ctx, fwd.ruleId, "forward", fwd.to);
-    }
+    if (await recordedSend(env, db, ctx, fwd.ruleId, "forward", fwd.to, raw)) budget--;
   }
 
   // Auto-replies go to the header From and only to a "real" human sender.
@@ -69,17 +79,15 @@ export async function runRuleSends(env: Env, db: DB, ctx: RuleSendContext): Prom
     if (await repliedRecently(db, reply.ruleId, headerFrom)) continue;
     const raw = buildAutoReply(ctx, fromName, headerFrom, reply.subject, reply.body);
     // eslint-disable-next-line no-await-in-loop -- sends are gated by the shared hourly budget, so each must settle before the next
-    if (await trySend(env, ctx.selfAddr, headerFrom, raw)) {
-      budget--;
-      // eslint-disable-next-line no-await-in-loop -- sequential by design; see above
-      await logSend(db, ctx, reply.ruleId, "autoReply", headerFrom);
-    }
+    if (await recordedSend(env, db, ctx, reply.ruleId, "autoReply", headerFrom, raw)) budget--;
   }
 }
 
 // Whether an inbound message is eligible for a vacation auto-reply. Skips
-// automated/bulk/list mail, bounces, and self — the standard backscatter guards.
+// automated/bulk/list mail, bounces, and self — the standard backscatter guards —
+// and any sender whose address is not authenticated.
 function shouldAutoReply(ctx: RuleSendContext, headerFrom: string): boolean {
+  if (!ctx.authenticated) return false;
   if (headerFrom.toLowerCase() === ctx.selfAddr.toLowerCase()) return false;
 
   const env = ctx.envelopeFrom.trim().toLowerCase();
@@ -116,35 +124,79 @@ async function repliedRecently(db: DB, ruleId: string, recipient: string): Promi
   return rows.length > 0;
 }
 
-async function trySend(env: Env, from: string, to: string, raw: string): Promise<boolean> {
+// A refused send is logged by rule, never by recipient: the user who set up a
+// forward is otherwise never told it stopped working.
+async function trySend(
+  env: Env,
+  ctx: RuleSendContext,
+  ruleId: string,
+  to: string,
+  raw: string,
+): Promise<boolean> {
   try {
-    await env.EMAIL.send(new EmailMessage(from, to, raw));
+    await env.EMAIL.send(new EmailMessage(ctx.selfAddr, to, raw));
     return true;
-  } catch {
+  } catch (err) {
+    console.error("rule_send_failed", {
+      mailboxId: ctx.mailboxId,
+      ruleId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return false;
   }
 }
 
-async function logSend(
+// Record a send in rule_send_log, then make it. The row is what stops the next
+// message from the same sender getting the auto-reply again, and what the
+// hourly cap counts, so a send that cannot be recorded is not made: an
+// unrecorded auto-reply would go out to every message that follows. A send the
+// platform refuses takes its row back, so the next message can try again.
+// Errors carry no recipient (see trySend).
+async function recordedSend(
+  env: Env,
   db: DB,
   ctx: RuleSendContext,
   ruleId: string,
   kind: "forward" | "autoReply",
-  recipient: string,
-): Promise<void> {
+  to: string,
+  raw: string,
+): Promise<boolean> {
+  const id = crypto.randomUUID();
+  const ids = { mailboxId: ctx.mailboxId, ruleId, kind };
+  try {
+    await db
+      .insert(ruleSendLog)
+      .values({ id, mailboxId: ctx.mailboxId, ruleId, kind, recipient: to.toLowerCase() });
+  } catch (err) {
+    console.error("rule_send_log_failed", { ...ids, error: errorText(err) });
+    return false;
+  }
+  if (await trySend(env, ctx, ruleId, to, raw)) return true;
+  // Left behind, the row only holds back a later send: the safe way to fail.
   await db
-    .insert(ruleSendLog)
-    .values({
-      id: crypto.randomUUID(),
-      mailboxId: ctx.mailboxId,
-      ruleId,
-      kind,
-      recipient: recipient.toLowerCase(),
-    })
-    .catch(() => {});
+    .delete(ruleSendLog)
+    .where(eq(ruleSendLog.id, id))
+    .catch((err) =>
+      console.error("rule_send_log_release_failed", { ...ids, error: errorText(err) }),
+    );
+  return false;
 }
 
-function buildForward(ctx: RuleSendContext, fromName: string | undefined, to: string): string {
+// Addresses on the incoming message's X-Loop headers, in order.
+function loopHops(parsed: ParsedEmail): string[] {
+  return (parsed.headers ?? [])
+    .filter((h) => h.key.toLowerCase() === "x-loop")
+    .flatMap((h) => h.value.split(","))
+    .map((hop) => hop.trim())
+    .filter(Boolean);
+}
+
+function buildForward(
+  ctx: RuleSendContext,
+  fromName: string | undefined,
+  to: string,
+  hops: string[],
+): string {
   const p = ctx.parsed;
   const subject = `Fwd: ${p.subject ?? "(no subject)"}`;
   const banner = [
@@ -186,7 +238,11 @@ function buildForward(ctx: RuleSendContext, fromName: string | undefined, to: st
     text,
     html,
     attachments,
-    extraHeaders: { "Auto-Submitted": "auto-forwarded" },
+    // extraHeaders holds one value per name, so the hops share one X-Loop.
+    extraHeaders: {
+      "Auto-Submitted": "auto-forwarded",
+      "X-Loop": [ctx.selfAddr, ...hops].join(", "),
+    },
   });
 }
 

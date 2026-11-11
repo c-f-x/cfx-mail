@@ -16,27 +16,14 @@ import { disablePush, enablePush, isPushEnabled, pushSupported } from "@/lib/pus
 import type { MailboxSummary } from "@/lib/queries.ts";
 
 type NotifyLevel = "none" | "normal" | "important";
-type NotifyTiers = { high: NotifyLevel; normal: NotifyLevel; low: NotifyLevel };
-type NotifyConfig = NotifyTiers & { mailboxId: string };
 
-const DEFAULT_TIERS: NotifyTiers = { high: "important", normal: "normal", low: "normal" };
-const OFF_TIERS: NotifyTiers = { high: "none", normal: "none", low: "none" };
-
-const NOTIFY_TIERS = [
-  { key: "high", label: "Important email" },
-  { key: "normal", label: "Normal email" },
-  { key: "low", label: "Low-priority email" },
-] as const;
+const DEFAULT_LEVEL: NotifyLevel = "normal";
 
 const LEVEL_OPTS = [
   { value: "none", label: "None" },
   { value: "normal", label: "Normal" },
   { value: "important", label: "Important" },
 ];
-
-function stripId(c: NotifyConfig): NotifyTiers {
-  return { high: c.high, normal: c.normal, low: c.low };
-}
 
 // iOS only delivers Web Push to a PWA installed on the Home Screen; in Safari
 // itself the push APIs don't exist, so `pushSupported()` is false there.
@@ -73,7 +60,12 @@ export function NotificationsSection({ mailboxes }: { mailboxes: MailboxSummary[
         if (configs.length === 0 && receivable.length > 0) {
           await Promise.all(
             receivable.map((m) =>
-              unwrap(rpc.push.mailboxes[":id"].$put({ param: { id: m.id }, json: DEFAULT_TIERS })),
+              unwrap(
+                rpc.push.mailboxes[":id"].$put({
+                  param: { id: m.id },
+                  json: { level: DEFAULT_LEVEL },
+                }),
+              ),
             ),
           );
           qc.invalidateQueries({ queryKey: ["push-mailboxes"] });
@@ -94,8 +86,8 @@ export function NotificationsSection({ mailboxes }: { mailboxes: MailboxSummary[
   const configById = new Map((configsData?.configs ?? []).map((c) => [c.mailboxId, c]));
 
   const saveConfig = useMutation({
-    mutationFn: ({ id, cfg }: { id: string; cfg: NotifyTiers }) =>
-      unwrap(rpc.push.mailboxes[":id"].$put({ param: { id }, json: cfg })),
+    mutationFn: ({ id, level }: { id: string; level: NotifyLevel }) =>
+      unwrap(rpc.push.mailboxes[":id"].$put({ param: { id }, json: { level } })),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["push-mailboxes"] }),
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
@@ -104,7 +96,7 @@ export function NotificationsSection({ mailboxes }: { mailboxes: MailboxSummary[
     <Section
       id="notifications"
       title="Notifications"
-      description="Get a push notification when new mail arrives. Enable this device, then choose how each mailbox notifies you — AI tags every email's priority so important mail can stand out."
+      description="Get a push notification when new mail arrives. Enable this device, then choose how each mailbox notifies you."
     >
       <div className="flex items-center justify-between gap-4">
         <div className="text-[13px]">
@@ -139,41 +131,30 @@ export function NotificationsSection({ mailboxes }: { mailboxes: MailboxSummary[
                       checked={on}
                       disabled={saveConfig.isPending}
                       onCheckedChange={(checked) =>
-                        saveConfig.mutate({
-                          id: m.id,
-                          cfg: checked ? DEFAULT_TIERS : OFF_TIERS,
-                        })
+                        saveConfig.mutate({ id: m.id, level: checked ? DEFAULT_LEVEL : "none" })
                       }
                     />
                   </div>
                   {on && (
-                    <div className="mt-2 grid gap-2 pl-0.5 sm:grid-cols-3">
-                      {NOTIFY_TIERS.map((tier) => (
-                        <div key={tier.key} className="flex flex-col gap-1">
-                          <span className="text-[12px] text-muted-foreground">{tier.label}</span>
-                          <Select
-                            items={LEVEL_OPTS}
-                            value={cfg[tier.key]}
-                            onValueChange={(v) =>
-                              saveConfig.mutate({
-                                id: m.id,
-                                cfg: { ...stripId(cfg), [tier.key]: v as NotifyLevel },
-                              })
-                            }
-                          >
-                            <SelectTrigger aria-label={`${tier.label} notification`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {LEVEL_OPTS.map((o) => (
-                                <SelectItem key={o.value} value={o.value}>
-                                  {o.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ))}
+                    <div className="mt-2 pl-0.5">
+                      <Select
+                        items={LEVEL_OPTS}
+                        value={cfg.level}
+                        onValueChange={(v) =>
+                          saveConfig.mutate({ id: m.id, level: v as NotifyLevel })
+                        }
+                      >
+                        <SelectTrigger aria-label="Notification level">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {LEVEL_OPTS.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   )}
                 </li>

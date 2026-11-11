@@ -1,7 +1,9 @@
 import type { ServiceMode } from "@cfmail/db/enums";
-import { mailbox } from "@cfmail/db/schema";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { mailbox, message, rateLimitCounter } from "@cfmail/db/schema";
+import { eq } from "drizzle-orm";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { svcRoutes } from "../../src/api/svc.ts";
+import type { Env } from "../../src/env.ts";
 import { applyMigrationsOnce, db, e, mountApp, resetDb } from "../support/app.ts";
 import { DOMAIN_ID, seedBase, seedThread } from "../support/seed.ts";
 
@@ -205,5 +207,149 @@ describe("svc /send", () => {
       body: { to: [{ email: "x@y.test" }] },
     });
     expect(res.status).toBe(401);
+  });
+
+  // The EMAIL binding has no local simulation, so these swap in a fake.
+  const mail = { to: [{ address: "user@elsewhere.test" }], subject: "Sign in", text: "link" };
+  function sendWith(email: { send: unknown }, body: object = mail): Promise<Response> {
+    return Promise.resolve(
+      app().request(
+        "/send",
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${SVC_KEY}`, "content-type": "application/json" },
+          body: JSON.stringify(body),
+        },
+        { ...e, EMAIL: email as unknown as Env["EMAIL"] },
+      ),
+    );
+  }
+
+  it("sends, and counts the send against the mailbox's hourly limit", async () => {
+    await seedServiceMailbox({ key: SVC_KEY });
+    const email = { send: vi.fn(async () => ({ messageId: "platform-mid" })) };
+
+    const res = await sendWith(email);
+
+    expect(res.status).toBe(201);
+    expect(email.send).toHaveBeenCalledTimes(1);
+    const row = await db().query.rateLimitCounter.findFirst({
+      where: eq(rateLimitCounter.key, `svc-send:${SVC_MAILBOX_ID}`),
+    });
+    expect(row?.count).toBe(1);
+  });
+
+  // The display name an admin gives a service mailbox is the sender name its
+  // mail goes out under, as with any mailbox.
+  it("sends under the mailbox's display name", async () => {
+    await seedServiceMailbox({ key: SVC_KEY });
+    await db().update(mailbox).set({ displayName: "Acme" }).where(eq(mailbox.id, SVC_MAILBOX_ID));
+    const email = { send: vi.fn(async (_msg: { from: unknown }) => ({ messageId: "mid" })) };
+
+    expect((await sendWith(email)).status).toBe(201);
+
+    expect(email.send.mock.calls[0]?.[0].from).toEqual({
+      name: "Acme",
+      email: "svc@example.com",
+    });
+  });
+
+  it("429s once a service mailbox has sent 600 in the hour, and sends nothing", async () => {
+    await seedServiceMailbox({ key: SVC_KEY });
+    await db()
+      .insert(rateLimitCounter)
+      .values({ key: `svc-send:${SVC_MAILBOX_ID}`, count: 600, windowStart: Date.now() });
+    const email = { send: vi.fn(async () => ({ messageId: "platform-mid" })) };
+
+    const res = await sendWith(email);
+
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "rate limit exceeded" });
+    expect(email.send).not.toHaveBeenCalled();
+  });
+
+  // RFC 8058 one-click unsubscribe, which Gmail and Yahoo require of bulk mail.
+  const unsubscribe = {
+    "List-Unsubscribe":
+      "<https://app.example.org/unsubscribe?t=abc123>, <mailto:unsubscribe@example.org>",
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  };
+
+  it("passes the unsubscribe headers to the send binding and keeps them in the Sent copy", async () => {
+    await seedServiceMailbox({ key: SVC_KEY });
+    const email = { send: vi.fn(async (_m: unknown) => ({ messageId: "platform-mid" })) };
+
+    const res = await sendWith(email, {
+      ...mail,
+      headers: {
+        "list-unsubscribe": unsubscribe["List-Unsubscribe"],
+        "List-Unsubscribe-Post": unsubscribe["List-Unsubscribe-Post"],
+      },
+    });
+
+    expect(res.status).toBe(201);
+    expect(email.send).toHaveBeenCalledTimes(1);
+    expect(email.send.mock.calls[0]![0]).toMatchObject({ headers: unsubscribe });
+    const { messageId } = (await res.json()) as { messageId: string };
+    const row = await db().query.message.findFirst({ where: eq(message.id, messageId) });
+    const raw = await (await e.BLOBS.get(row!.rawR2Key!))!.text();
+    const lines = raw.split(/\r?\n/);
+    expect(lines).toContain(`List-Unsubscribe: ${unsubscribe["List-Unsubscribe"]}`);
+    expect(lines).toContain("List-Unsubscribe-Post: List-Unsubscribe=One-Click");
+  });
+
+  it("sends no custom headers when none are given", async () => {
+    await seedServiceMailbox({ key: SVC_KEY });
+    const email = { send: vi.fn(async (_m: unknown) => ({ messageId: "platform-mid" })) };
+
+    await sendWith(email);
+
+    expect(email.send.mock.calls[0]![0]).toMatchObject({ headers: undefined });
+  });
+
+  it("400s on a header it does not allow, and sends nothing", async () => {
+    await seedServiceMailbox({ key: SVC_KEY });
+    const email = { send: vi.fn(async () => ({ messageId: "platform-mid" })) };
+
+    const res = await sendWith(email, { ...mail, headers: { Bcc: "victim@example.com" } });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "Only List-Unsubscribe and List-Unsubscribe-Post may be set as headers.",
+    });
+    expect(email.send).not.toHaveBeenCalled();
+  });
+
+  it("400s on a header value with a line break, and sends nothing", async () => {
+    await seedServiceMailbox({ key: SVC_KEY });
+    const email = { send: vi.fn(async () => ({ messageId: "platform-mid" })) };
+
+    const res = await sendWith(email, {
+      ...mail,
+      headers: { "List-Unsubscribe": "<https://app.example.org/u>\r\nBcc: victim@example.com" },
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "A header value must not contain a line break." });
+    expect(email.send).not.toHaveBeenCalled();
+  });
+
+  it("400s on List-Unsubscribe-Post without an https List-Unsubscribe", async () => {
+    await seedServiceMailbox({ key: SVC_KEY });
+    const email = { send: vi.fn(async () => ({ messageId: "platform-mid" })) };
+
+    const res = await sendWith(email, {
+      ...mail,
+      headers: {
+        "List-Unsubscribe": "<mailto:unsubscribe@example.org>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+      },
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "List-Unsubscribe-Post needs a List-Unsubscribe with an https address.",
+    });
+    expect(email.send).not.toHaveBeenCalled();
   });
 });

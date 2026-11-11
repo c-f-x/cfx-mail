@@ -1,4 +1,4 @@
-import { contactKey, domain, mailbox, mailboxInvite, mailboxMember } from "@cfmail/db/schema";
+import { appPassword, contactKey, domain, mailbox, mailboxMember } from "@cfmail/db/schema";
 import { MailboxKind, Perm } from "@cfmail/shared/permissions";
 import { and, eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -78,6 +78,31 @@ describe("GET /", () => {
     expect(body.mailboxes.map((m) => m.address)).toContain("team@example.com");
   });
 
+  it("orders the list by domain, then personal before group before temp, then address", async () => {
+    await db().insert(domain).values({ id: "domain-a", name: "alpha.example" });
+    await db().delete(mailbox);
+    // Inserted out of order on purpose: the order must not depend on it.
+    await insertMailbox("m1", { localPart: "zoe", type: "group" });
+    await insertMailbox("m2", { localPart: "t-1", type: "temp", domainId: "domain-a" });
+    await insertMailbox("m3", { localPart: "bob", type: "personal" });
+    await insertMailbox("m4", { localPart: "team", type: "group", domainId: "domain-a" });
+    await insertMailbox("m5", { localPart: "amy", type: "group" });
+    await insertMailbox("m6", { localPart: "Zed", type: "personal", domainId: "domain-a" });
+    await insertMailbox("m7", { localPart: "ann", type: "personal", domainId: "domain-a" });
+
+    const res = await request(asOwner(), "GET", "/");
+    const body = (await res.json()) as { mailboxes: { address: string }[] };
+    expect(body.mailboxes.map((m) => m.address)).toEqual([
+      "ann@alpha.example",
+      "Zed@alpha.example",
+      "team@alpha.example",
+      "t-1@alpha.example",
+      "bob@example.com",
+      "amy@example.com",
+      "zoe@example.com",
+    ]);
+  });
+
   it("shows a shared mailbox with member role and granted perms", async () => {
     await grantMember(db(), Perm.READ);
     const res = await request(asMember(), "GET", "/");
@@ -91,6 +116,17 @@ describe("GET /", () => {
     const res = await request(asOwner(), "GET", "/");
     const body = (await res.json()) as { mailboxes: { id: string }[] };
     expect(body.mailboxes.map((m) => m.id)).not.toContain(SERVICE_MAILBOX_ID);
+  });
+
+  it("lists a mailbox being emptied and hides one being deleted", async () => {
+    await db().update(mailbox).set({ pendingPurge: "empty" }).where(eq(mailbox.id, MAILBOX_ID));
+    await db()
+      .update(mailbox)
+      .set({ pendingPurge: "delete" })
+      .where(eq(mailbox.id, OTHER_MAILBOX_ID));
+    const res = await request(asOwner(), "GET", "/");
+    const body = (await res.json()) as { mailboxes: { id: string; unread: number }[] };
+    expect(body.mailboxes).toEqual([expect.objectContaining({ id: MAILBOX_ID, unread: 0 })]);
   });
 
   it("returns an empty list for a user with no mailboxes", async () => {
@@ -142,6 +178,66 @@ describe("POST /", () => {
       type: "personal",
     });
     expect(res.status).toBe(403);
+  });
+
+  // A temp mailbox always deletes itself: an hour after creation unless asked
+  // otherwise, and never later than 7 days, the same rule as POST /api/temp.
+  // Other kinds never expire.
+  it.each([
+    ["no expiry asked for", undefined, 3600],
+    ["a 6-hour expiry", 6 * 3600, 6 * 3600],
+    ["the 7-day maximum", 7 * 24 * 3600, 7 * 24 * 3600],
+  ])("gives a temp mailbox an expiry with %s", async (_, ttlSeconds, expected) => {
+    await setDomainKinds(MailboxKind.TEMP);
+    const before = Date.now();
+    const res = await request(asAdmin(), "POST", "/", {
+      domainId: DOMAIN_ID,
+      localPart: "throwaway",
+      type: "temp",
+      ...(ttlSeconds ? { ttlSeconds } : {}),
+    });
+    expect(res.status).toBe(201);
+    const { id } = (await res.json()) as { id: string };
+    const row = await db().query.mailbox.findFirst({ where: eq(mailbox.id, id) });
+    const seconds = ((row?.expiresAt?.getTime() ?? 0) - before) / 1000;
+    expect(seconds).toBeGreaterThan(expected - 60);
+    expect(seconds).toBeLessThanOrEqual(expected + 60);
+  });
+
+  it("refuses a temp mailbox that would live longer than 7 days", async () => {
+    await setDomainKinds(MailboxKind.TEMP);
+    const res = await request(asAdmin(), "POST", "/", {
+      domainId: DOMAIN_ID,
+      localPart: "too-long",
+      type: "temp",
+      ttlSeconds: 30 * 24 * 3600,
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("gives a personal mailbox no expiry, even when one is sent", async () => {
+    await setDomainKinds(MailboxKind.PERSONAL);
+    const res = await request(asAdmin(), "POST", "/", {
+      domainId: DOMAIN_ID,
+      localPart: "keeper",
+      type: "personal",
+      ttlSeconds: 3600,
+    });
+    const { id } = (await res.json()) as { id: string };
+    expect(
+      (await db().query.mailbox.findFirst({ where: eq(mailbox.id, id) }))?.expiresAt,
+    ).toBeNull();
+  });
+
+  it("answers 409 for an address that is already in use", async () => {
+    await setDomainKinds(MailboxKind.PERSONAL);
+    const body = { domainId: DOMAIN_ID, localPart: "twice", type: "personal" };
+    expect((await request(asAdmin(), "POST", "/", body)).status).toBe(201);
+
+    const again = await request(asAdmin(), "POST", "/", body);
+
+    expect(again.status).toBe(409);
+    expect(await again.json()).toEqual({ error: "address already in use" });
   });
 
   it("creates a mailbox as admin when the domain allows the kind", async () => {
@@ -460,6 +556,14 @@ describe("DELETE /:id", () => {
     expect(res.status).toBe(404);
   });
 
+  // The same answer as a missing mailbox, so a stranger learns nothing.
+  it("404s a stranger", async () => {
+    const res = await request(asOutsider(), "DELETE", `/${MAILBOX_ID}`);
+    expect(res.status).toBe(404);
+    const row = await db().query.mailbox.findFirst({ where: eq(mailbox.id, MAILBOX_ID) });
+    expect(row?.pendingPurge).toBeNull();
+  });
+
   it("403s a member with MANAGE (owner-only route)", async () => {
     await grantMember(db(), Perm.READ | Perm.WRITE | Perm.MANAGE);
     const res = await request(asMember(), "DELETE", `/${MAILBOX_ID}`);
@@ -493,6 +597,30 @@ describe("members", () => {
     const body = (await res.json()) as { members: { userId: string; email: string }[] };
     expect(body.members).toHaveLength(1);
     expect(body.members[0]).toMatchObject({ userId: member.id, email: member.email });
+  });
+
+  it("removing a member also removes their app passwords for that mailbox only", async () => {
+    await grantMember(db(), Perm.READ);
+    await grantMember(db(), Perm.READ, OTHER_MAILBOX_ID);
+    await db()
+      .insert(appPassword)
+      .values([
+        { id: "ap-here", userId: member.id, mailboxId: MAILBOX_ID, name: "phone", hash: "h1" },
+        {
+          id: "ap-other",
+          userId: member.id,
+          mailboxId: OTHER_MAILBOX_ID,
+          name: "phone",
+          hash: "h2",
+        },
+        { id: "ap-owner", userId: owner.id, mailboxId: MAILBOX_ID, name: "laptop", hash: "h3" },
+      ]);
+
+    const res = await request(asOwner(), "DELETE", `/${MAILBOX_ID}/members/${member.id}`);
+
+    expect(res.status).toBe(204);
+    const left = await db().select({ id: appPassword.id }).from(appPassword);
+    expect(left.map((r) => r.id).sort()).toEqual(["ap-other", "ap-owner"]);
   });
 
   it("400s granting with a missing body field", async () => {
@@ -548,55 +676,6 @@ describe("members", () => {
   it("403s a member without MANAGE removing", async () => {
     await grantMember(db(), Perm.READ);
     const res = await request(asMember(), "DELETE", `/${MAILBOX_ID}/members/${OUTSIDER_ID}`);
-    expect(res.status).toBe(403);
-  });
-});
-
-async function seedInvite(): Promise<string> {
-  const id = "invite-1";
-  await db().insert(mailboxInvite).values({
-    id,
-    mailboxId: MAILBOX_ID,
-    email: "invitee@example.com",
-    perms: Perm.READ,
-    invitedByUserId: OWNER_ID,
-  });
-  return id;
-}
-
-describe("invites", () => {
-  it("401s listing invites for an anonymous caller", async () => {
-    const res = await request(asAnon(), "GET", `/${MAILBOX_ID}/invites`);
-    expect(res.status).toBe(401);
-  });
-
-  it("403s a member with READ listing invites", async () => {
-    await grantMember(db(), Perm.READ);
-    const res = await request(asMember(), "GET", `/${MAILBOX_ID}/invites`);
-    expect(res.status).toBe(403);
-  });
-
-  it("lists invites for the owner", async () => {
-    await seedInvite();
-    const res = await request(asOwner(), "GET", `/${MAILBOX_ID}/invites`);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { invites: { email: string }[] };
-    expect(body.invites).toHaveLength(1);
-    expect(body.invites[0]?.email).toBe("invitee@example.com");
-  });
-
-  it("deletes an invite", async () => {
-    const id = await seedInvite();
-    const res = await request(asOwner(), "DELETE", `/${MAILBOX_ID}/invites/${id}`);
-    expect(res.status).toBe(204);
-    const row = await db().query.mailboxInvite.findFirst({ where: eq(mailboxInvite.id, id) });
-    expect(row).toBeUndefined();
-  });
-
-  it("403s a member without MANAGE deleting an invite", async () => {
-    await grantMember(db(), Perm.READ);
-    const id = await seedInvite();
-    const res = await request(asMember(), "DELETE", `/${MAILBOX_ID}/invites/${id}`);
     expect(res.status).toBe(403);
   });
 });

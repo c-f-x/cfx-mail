@@ -2,7 +2,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { rpc, unwrap } from "@/lib/api.ts";
 import { keys } from "@/lib/query-keys.ts";
+import type { DraftSaveResult } from "./compose-store.ts";
 import type { BodyFormat, UploadedAttachment } from "./compose-utils.ts";
+import { createLatestQueue } from "./latest-queue.ts";
 
 export interface DraftSnapshot {
   // Plus-alias sender override (e.g. "hi+tag@"), or null for the mailbox's own
@@ -60,15 +62,10 @@ export function useDraftPersistence({
   // The most recent snapshot, kept current so close/unmount can flush the last
   // <700ms of typing that the debounce timer would otherwise drop.
   const latestRef = useRef<DraftFlush | null>(null);
-  const saveRef = useRef<{
-    saving: boolean;
-    queued: DraftFlush | null;
-  }>({
-    saving: false,
-    queued: null,
-  });
+  // Saves run one at a time; a save asked for meanwhile waits, newest first.
+  const [enqueueSave] = useState(() => createLatestQueue<boolean>());
 
-  // eslint-disable-next-line react-doctor/react-compiler-no-manual-memoization -- stable identity feeds `deleteDraft`/`flush` deps (autosave), which exhaustive-deps requires
+  // stable identity feeds `deleteDraft`/`flush` deps (autosave), which exhaustive-deps requires
   const invalidateDrafts = useCallback(() => {
     if (!mailboxId) return;
     qc.invalidateQueries({ queryKey: keys.drafts(mailboxId) });
@@ -76,7 +73,7 @@ export function useDraftPersistence({
     qc.invalidateQueries({ queryKey: keys.folderCounts(mailboxId) });
   }, [qc, mailboxId]);
 
-  // eslint-disable-next-line react-doctor/react-compiler-no-manual-memoization -- stable identity feeds `flush` deps (autosave), which exhaustive-deps requires
+  // stable identity feeds `flush` deps (autosave), which exhaustive-deps requires
   const deleteDraft = useCallback(
     async (keepalive?: boolean) => {
       const id = draftIdRef.current;
@@ -88,57 +85,53 @@ export function useDraftPersistence({
     [invalidateDrafts],
   );
 
-  // eslint-disable-next-line react-doctor/react-compiler-no-manual-memoization -- stable identity feeds the pagehide-flush effect's exhaustive-deps
+  // Resolves true once `data` (or a newer snapshot that replaced it) is stored.
+  // stable identity feeds the pagehide-flush effect's exhaustive-deps
   const flush = useCallback(
-    async (data: DraftFlush) => {
-      const st = saveRef.current;
-      if (st.saving) {
-        st.queued = data;
-        return;
-      }
-      st.saving = true;
-      try {
-        if (data.isEmpty) {
-          await deleteDraft(data.keepalive);
-        } else {
-          const payload = {
-            ...data.snap,
-            inReplyTo,
-            references,
-            quote: quoteRef,
-          };
-          if (draftIdRef.current) {
-            await unwrap(
-              rpc.drafts[":id"].$patch(
-                { param: { id: draftIdRef.current }, json: payload },
-                { init: { keepalive: data.keepalive } },
-              ),
-            );
+    (data: DraftFlush): Promise<boolean> =>
+      enqueueSave(async () => {
+        try {
+          if (data.isEmpty) {
+            await deleteDraft(data.keepalive);
           } else {
-            // createDraft's schema takes `fromAddress` as optional (not null) —
-            // updateDraft is the nullish one — so drop a null before sending.
-            const res = await unwrap(
-              rpc.drafts.$post(
-                { json: { mailboxId, ...payload, fromAddress: payload.fromAddress ?? undefined } },
-                { init: { keepalive: data.keepalive } },
-              ),
-            );
-            draftIdRef.current = res.draft.id;
+            const payload = {
+              ...data.snap,
+              inReplyTo,
+              references,
+              quote: quoteRef,
+            };
+            if (draftIdRef.current) {
+              await unwrap(
+                rpc.drafts[":id"].$patch(
+                  { param: { id: draftIdRef.current }, json: payload },
+                  { init: { keepalive: data.keepalive } },
+                ),
+              );
+            } else {
+              // createDraft's schema takes `fromAddress` as optional (not null) —
+              // updateDraft is the nullish one — so drop a null before sending.
+              const res = await unwrap(
+                rpc.drafts.$post(
+                  {
+                    json: { mailboxId, ...payload, fromAddress: payload.fromAddress ?? undefined },
+                  },
+                  { init: { keepalive: data.keepalive } },
+                ),
+              );
+              draftIdRef.current = res.draft.id;
+            }
+            setSavedHint(true);
+            invalidateDrafts();
           }
-          setSavedHint(true);
-          invalidateDrafts();
+          savedKeyRef.current = data.key;
+          return true;
+        } catch {
+          // Autosave is best-effort; surface nothing on transient failures. The
+          // pop-out reads the result and keeps the text where it is.
+          return false;
         }
-        savedKeyRef.current = data.key;
-      } catch {
-        // Autosave is best-effort; surface nothing on transient failures.
-      } finally {
-        st.saving = false;
-        const q = st.queued;
-        st.queued = null;
-        if (q) void flush(q);
-      }
-    },
-    [mailboxId, inReplyTo, references, quoteRef, deleteDraft, invalidateDrafts],
+      }),
+    [enqueueSave, mailboxId, inReplyTo, references, quoteRef, deleteDraft, invalidateDrafts],
   );
 
   // Latest-`flush` shim so the debounce effect below doesn't re-subscribe (and
@@ -179,15 +172,14 @@ export function useDraftPersistence({
   }, [flush]);
 
   // Persist the current state and resolve the draft id — used by the pop-out so
-  // the new window can rehydrate from the server-saved draft. Returns null only
-  // when there is genuinely nothing to carry over.
-  const ensureDraftSaved = async (): Promise<string | null> => {
+  // the new window can rehydrate from the server-saved draft. The id is null
+  // only when there is genuinely nothing to carry over. It waits for a save
+  // already running, which may be the one that creates the draft.
+  const ensureDraftSaved = async (): Promise<DraftSaveResult> => {
     const { snap, isEmpty } = currentSnapshot();
-    if (isEmpty) return draftIdRef.current;
-    const key = JSON.stringify(snap);
-    savedKeyRef.current = key;
-    await flush({ snap, isEmpty: false, key });
-    return draftIdRef.current;
+    if (isEmpty) return { ok: true, id: draftIdRef.current };
+    const ok = await flush({ snap, isEmpty: false, key: JSON.stringify(snap) });
+    return ok ? { ok: true, id: draftIdRef.current } : { ok: false };
   };
 
   // The draft is sent/scheduled/discarded — don't let the close-flush

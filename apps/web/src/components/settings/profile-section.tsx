@@ -35,9 +35,9 @@ export function ProfileSection({
 }) {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
-  // react-doctor-disable-next-line no-derived-useState -- editable draft seeded from the prop; re-seeded via the parent's key remount when the server value changes
+  // editable draft seeded from the prop; re-seeded via the parent's key remount when the server value changes
   const [draftName, setDraftName] = useState(name);
-  // react-doctor-disable-next-line no-derived-useState -- editable draft seeded from the prop; re-seeded via the parent's key remount when the server value changes
+  // editable draft seeded from the prop; re-seeded via the parent's key remount when the server value changes
   const [draftImage, setDraftImage] = useState(image);
   const [uploading, setUploading] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
@@ -81,7 +81,7 @@ export function ProfileSection({
       if (res.error) throw new Error(res.error.message ?? "Failed to save");
       return { name: nextName, image: nextImage || null };
     },
-    // Write into the cache directly — the session cookie cache can lag ~60s.
+    // Write into the cache directly: this client is the only writer.
     onSuccess: (next) => {
       qc.setQueryData<{ user: MeUser | null }>(meQuery.queryKey, (old) =>
         old?.user ? { ...old, user: { ...old.user, ...next } } : old,

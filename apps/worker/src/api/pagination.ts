@@ -39,3 +39,10 @@ export function nextCursor<T>(
   const last = pick(rows[rows.length - 1]!);
   return `${Math.floor(last.ts.getTime() / 1000)}_${last.id}`;
 }
+
+// Page size from a `limit` query value, clamped to 1..200. SQLite reads
+// LIMIT -1 as "no limit", so the raw number never reaches a query.
+export function pageLimit(raw: string | undefined): number {
+  const asked = Math.trunc(Number(raw ?? 50));
+  return Number.isFinite(asked) ? Math.min(Math.max(asked, 1), 200) : 50;
+}

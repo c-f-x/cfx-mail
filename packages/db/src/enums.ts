@@ -13,7 +13,7 @@ export type MessageDirection = (typeof MESSAGE_DIRECTIONS)[number];
 export const USER_ROLES = ["admin", "user"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
-export const SPAM_FILTER_LEVELS = ["off", "auth", "standard", "ai"] as const;
+export const SPAM_FILTER_LEVELS = ["off", "auth", "standard"] as const;
 export type SpamFilterLevel = (typeof SPAM_FILTER_LEVELS)[number];
 
 export const SERVICE_MODES = ["duplex", "send"] as const;
@@ -22,35 +22,8 @@ export type ServiceMode = (typeof SERVICE_MODES)[number];
 export const SPAM_VERDICTS = ["clean", "suspicious", "spam"] as const;
 export type SpamVerdict = (typeof SPAM_VERDICTS)[number];
 
-// AI auto-category assigned to inbound mail (best-effort, Workers AI). A fixed
-// taxonomy; each tag is defined for the model in `mail/ai.ts` (CATEGORY_GUIDE)
-// and coloured as a chip in the list (thread-row.tsx). Keep the three in sync.
-// `other` is the fallback when nothing fits.
-export const AI_CATEGORIES = [
-  "personal",
-  "newsletter",
-  "promotion",
-  "shipping",
-  "receipt",
-  "finance",
-  "travel",
-  "social",
-  "security",
-  "update",
-  "notification",
-  "calendar",
-  "other",
-] as const;
-export type AiCategory = (typeof AI_CATEGORIES)[number];
-
-// AI-judged importance of inbound mail (best-effort, Workers AI). Drives which
-// kind of push notification a mailbox sends. "high" only for genuinely
-// time-sensitive/personal mail; "low" for bulk/automated.
-export const AI_PRIORITIES = ["high", "normal", "low"] as const;
-export type AiPriority = (typeof AI_PRIORITIES)[number];
-
-// Per-mailbox, per-priority-tier notification style. "none" = silent,
-// "important" = attention-grabbing (sticky/vibrate).
+// Per-mailbox notification style. "none" = silent, "important" =
+// attention-grabbing (sticky/vibrate).
 export const NOTIFY_LEVELS = ["none", "normal", "important"] as const;
 export type NotifyLevel = (typeof NOTIFY_LEVELS)[number];
 

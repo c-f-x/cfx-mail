@@ -56,7 +56,8 @@ export function ServiceSection() {
       description={
         <>
           Key-driven send/receive mailboxes for integrations — no login, no sidebar. Authenticate to{" "}
-          <Mono>/api/svc</Mono> with the bearer key. Inbound mail is kept for 30 days.
+          <Mono>/api/svc</Mono> with the bearer key. Mail older than 30 days, sent or received, is
+          deleted.
         </>
       }
     >
@@ -81,7 +82,7 @@ export function ServiceSection() {
           <ServiceCreateForm
             eligibleDomains={eligibleDomains}
             onCreated={(res, address) => {
-              invalidate();
+              void invalidate();
               setRevealed({ address, key: res.key });
             }}
           />
@@ -102,16 +103,20 @@ function ServiceCreateForm({
 }) {
   const [local, setLocal] = useState("");
   const [domainId, setDomainId] = useState("");
+  const [name, setName] = useState("");
   const [mode, setMode] = useState<"duplex" | "send">("duplex");
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidation runs in onCreated
+  // invalidation runs in onCreated
   const create = useMutation({
     mutationFn: () =>
-      unwrap(rpc.admin.service.$post({ json: { domainId, localPart: local, mode } })),
+      unwrap(
+        rpc.admin.service.$post({ json: { domainId, localPart: local, displayName: name, mode } }),
+      ),
     onSuccess: (res) => {
       const dom = eligibleDomains.find((d) => d.id === domainId);
       onCreated(res, `${local}@${dom?.name ?? ""}`);
       setLocal("");
+      setName("");
       toast.success("Service mailbox created");
     },
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
@@ -134,12 +139,20 @@ function ServiceCreateForm({
         ariaLabel="Domain"
         options={eligibleDomains.map((d) => ({ value: d.id, label: d.name }))}
       />
+      <Input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Display name (optional)"
+        aria-label="Display name"
+        maxLength={200}
+        className="min-w-[160px] flex-1"
+      />
       <Select
         value={mode}
         onValueChange={(v) => setMode(v as "duplex" | "send")}
         title="Direction"
         ariaLabel="Direction"
-        className="min-w-[130px]"
+        className="w-auto min-w-[130px]"
         options={[
           { value: "duplex", label: "send + receive" },
           { value: "send", label: "send-only" },
@@ -166,8 +179,22 @@ function ServiceRow({
   invalidate: () => void;
 }) {
   const confirm = useConfirm();
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState(s.displayName ?? "");
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidation runs in injected invalidate
+  // invalidation runs in injected invalidate
+  const rename = useMutation({
+    mutationFn: () =>
+      unwrap(rpc.admin.service[":id"].$patch({ param: { id: s.id }, json: { displayName: name } })),
+    onSuccess: () => {
+      invalidate();
+      setNaming(false);
+      toast.success("Display name saved");
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+
+  // invalidation runs in injected invalidate
   const rotate = useMutation({
     mutationFn: () => unwrap(rpc.admin.service[":id"].rotate.$post({ param: { id: s.id } })),
     onSuccess: (res) => {
@@ -177,7 +204,7 @@ function ServiceRow({
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidation runs in injected invalidate
+  // invalidation runs in injected invalidate
   const setMode = useMutation({
     mutationFn: (mode: "duplex" | "send") =>
       unwrap(rpc.admin.service[":id"].$patch({ param: { id: s.id }, json: { mode } })),
@@ -185,7 +212,7 @@ function ServiceRow({
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidation runs in injected invalidate
+  // invalidation runs in injected invalidate
   const remove = useMutation({
     mutationFn: () => unwrap(rpc.admin.service[":id"].$delete({ param: { id: s.id } })),
     onSuccess: () => {
@@ -199,8 +226,13 @@ function ServiceRow({
     <li className="px-3 py-2.5 text-[13px]">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="truncate font-medium">{s.address}</span>
+          <div className="flex flex-wrap items-center gap-x-2">
+            {s.displayName && <span className="truncate font-medium">{s.displayName}</span>}
+            <span
+              className={s.displayName ? "truncate text-muted-foreground" : "truncate font-medium"}
+            >
+              {s.address}
+            </span>
             <KindBadge kind="service" />
           </div>
           <div className="truncate text-[11px] text-muted-foreground">
@@ -208,12 +240,12 @@ function ServiceRow({
             {s.lastMessageAt && ` · last ${new Date(s.lastMessageAt).toLocaleString()}`}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Select
             value={s.mode}
             onValueChange={(v) => setMode.mutate(v as "duplex" | "send")}
             disabled={setMode.isPending}
-            className="h-7 text-[11px]"
+            className="h-7 w-auto text-[11px] whitespace-nowrap"
             title="Direction"
             ariaLabel="Direction"
             options={[
@@ -221,6 +253,16 @@ function ServiceRow({
               { value: "send", label: "send-only" },
             ]}
           />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setName(s.displayName ?? "");
+              setNaming((v) => !v);
+            }}
+          >
+            Display name
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -247,6 +289,35 @@ function ServiceRow({
           </Button>
         </div>
       </div>
+      {naming && (
+        <form
+          className="mt-3 flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            rename.mutate();
+          }}
+        >
+          <span className="text-[11px] text-muted-foreground">
+            Shown as the sender name on outgoing mail. Leave empty for the address alone.
+          </span>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Display name"
+            aria-label="Display name"
+            maxLength={200}
+            className="min-w-[200px] flex-1"
+            autoFocus
+          />
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={rename.isPending || name.trim() === (s.displayName ?? "")}
+          >
+            Save
+          </Button>
+        </form>
+      )}
     </li>
   );
 }
@@ -278,11 +349,15 @@ function ServiceKeyDialog({
             variant="outline"
             size="sm"
             onClick={() => {
-              if (info) {
-                navigator.clipboard.writeText(info.key);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1500);
-              }
+              if (!info) return;
+              // Say "copied" only once the browser has copied it.
+              void navigator.clipboard.writeText(info.key).then(
+                () => {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                },
+                () => toast.error("Could not copy. Select the key and copy it by hand."),
+              );
             }}
           >
             {copied ? <Check className="h-3.5 w-3.5" /> : "Copy"}

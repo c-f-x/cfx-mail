@@ -24,7 +24,7 @@
 
 import type { DB } from "@cfmail/db";
 import { getConfig, setConfig } from "../config.ts";
-import { CSS_URL_RE } from "./img-proxy.ts";
+import { replaceCssUrls } from "./img-proxy.ts";
 
 export const TRACKER_LIST_KEY = "tracker_list";
 const REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -150,15 +150,17 @@ export function parseEasyPrivacy(txt: string): RuleSet | null {
   return regexes.length >= MIN_RULES_PER_SOURCE ? { substrings: [], regexes } : null;
 }
 
+// Pinned to a commit on purpose, so the lists we execute as patterns only change
+// when someone reads the diff; bump the SHAs by hand.
 const SOURCES: { name: string; url: string; parse: (text: string) => RuleSet | null }[] = [
   {
     name: "mailtrackerblocker",
-    url: "https://raw.githubusercontent.com/apparition47/MailTrackerBlocker/HEAD/Source/MTBBlockedMessage.m",
+    url: "https://raw.githubusercontent.com/apparition47/MailTrackerBlocker/7463682a39af055a488539a3d0aa7898437b33f5/Source/MTBBlockedMessage.m",
     parse: parseMailTrackerBlocker,
   },
   {
     name: "easyprivacy",
-    url: "https://raw.githubusercontent.com/easylist/easylist/HEAD/easyprivacy/easyprivacy_general_emailtrackers.txt",
+    url: "https://raw.githubusercontent.com/easylist/easylist/89ee07736f32cb3de2816463f3b831657d57863b/easyprivacy/easyprivacy_general_emailtrackers.txt",
     parse: parseEasyPrivacy,
   },
 ];
@@ -320,7 +322,7 @@ function srcsetUrls(srcset: string): string[] {
 
 // Replace tracker `url(…)`s in a CSS string with `none`, counting them.
 function stripCssTrackers(css: string, rules: TrackerRules, count: { n: number }): string {
-  return css.replace(CSS_URL_RE, (full, _q, u: string) => {
+  return replaceCssUrls(css, (full, u) => {
     if (!isTrackerUrl(u, rules)) return full;
     count.n++;
     return "none";

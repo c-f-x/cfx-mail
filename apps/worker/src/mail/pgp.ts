@@ -197,6 +197,8 @@ export interface PgpHeaders {
   messageId: string;
   inReplyTo?: string;
   references?: string[];
+  // Checked header lines a service send adds (List-Unsubscribe and its Post).
+  extraHeaders?: Record<string, string>;
   date: Date;
 }
 
@@ -298,6 +300,8 @@ export interface DecryptResult {
   decryptedMime: boolean;
 }
 
+const MAX_DECOMPRESSED_BYTES = 50 * 1024 * 1024;
+
 export async function decryptVerify(args: {
   rawText: string;
   privArmored: string;
@@ -319,6 +323,9 @@ export async function decryptVerify(args: {
         message: await openpgp.readMessage({ armoredMessage: armored }),
         decryptionKeys: [priv],
         ...(haveKey ? { verificationKeys } : {}),
+        // openpgp inflates without limit by default; a few KiB of compressed zeros
+        // from any sender can fill the isolate's memory and take it down.
+        config: { maxDecompressedMessageSize: MAX_DECOMPRESSED_BYTES },
       });
       const v = await checkSignatures(signatures, haveKey);
       return {
@@ -399,7 +406,11 @@ async function readVerificationKeys(armored?: string | null): Promise<OpenPGP.Pu
   const openpgp = await loadPgp();
   try {
     return [(await openpgp.readKey({ armoredKey: armored })) as OpenPGP.PublicKey];
-  } catch {
+  } catch (err) {
+    // Every signature from this sender now reads "unknown"; say why.
+    console.error("pgp_sender_key_unreadable", {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return [];
   }
 }
@@ -506,6 +517,7 @@ function topHeaders(h: PgpHeaders, extra: Record<string, string>): string {
   lines.push(`Message-ID: ${h.messageId}`);
   if (h.inReplyTo) lines.push(`In-Reply-To: ${h.inReplyTo}`);
   if (h.references?.length) lines.push(`References: ${h.references.join(" ")}`);
+  for (const [k, v] of Object.entries(h.extraHeaders ?? {})) lines.push(`${k}: ${v}`);
   lines.push("MIME-Version: 1.0");
   for (const [k, v] of Object.entries(extra)) lines.push(`${k}: ${v}`);
   return lines.join(CRLF);

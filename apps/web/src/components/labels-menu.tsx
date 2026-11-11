@@ -40,7 +40,7 @@ export function LabelsMenu({
   const byMessage: Record<string, MessageLabel[]> = appliedData?.labels ?? {};
   const applied = new Set((byMessage[messageId] ?? []).map((l) => l.id));
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- onSuccess refreshes label caches via invalidateLabels()
+  // onSuccess refreshes label caches via invalidateLabels()
   const toggle = useMutation({
     mutationFn: (input: { labelId: string; on: boolean }) => {
       const target = rpc.labels[":id"].messages[":messageId"];
@@ -84,7 +84,7 @@ export function BulkLabelsMenu({
   const applied = new Set([...counts].flatMap(([id, n]) => (n === threadIds.length ? [id] : [])));
   const partial = new Set([...counts].flatMap(([id, n]) => (n < threadIds.length ? [id] : [])));
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- onSuccess refreshes label caches via invalidateLabels()
+  // onSuccess refreshes label caches via invalidateLabels()
   const toggle = useMutation({
     mutationFn: (input: { labelId: string; on: boolean }) =>
       Promise.all(
@@ -151,7 +151,7 @@ function LabelsPopover({ mailboxId, applied, partial, busy, onToggle }: ShellPro
 
   const invalidate = () => invalidateLabels(qc, mailboxId);
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- onSuccess refreshes label caches via invalidate()
+  // onSuccess refreshes label caches via invalidate()
   const create = useMutation({
     mutationFn: () => unwrap(rpc.labels.$post({ json: { mailboxId, name: name.trim(), color } })),
     onSuccess: (res) => {
@@ -164,7 +164,7 @@ function LabelsPopover({ mailboxId, applied, partial, busy, onToggle }: ShellPro
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- onSuccess refreshes label caches via invalidate()
+  // onSuccess refreshes label caches via invalidate()
   const remove = useMutation({
     mutationFn: (labelId: string) => unwrap(rpc.labels[":id"].$delete({ param: { id: labelId } })),
     onSuccess: invalidate,

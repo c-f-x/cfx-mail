@@ -1,4 +1,5 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { loadView } from "./load-state.ts";
 import {
   type DraftRow,
   draftsQuery,
@@ -15,6 +16,9 @@ import {
 export interface Feed<T> {
   items: T[];
   loading: boolean;
+  /** Why the load failed when there is nothing to show, else null; render it with `refetch`. */
+  error: unknown;
+  refetch: () => void;
   hasMore: boolean;
   loadingMore: boolean;
   loadMore: () => void;
@@ -23,6 +27,10 @@ export interface Feed<T> {
 interface InfiniteResult<P> {
   data?: { pages: P[] };
   isLoading: boolean;
+  isError: boolean;
+  error: unknown;
+  isFetching: boolean;
+  refetch: () => unknown;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   fetchNextPage: () => void;
@@ -34,9 +42,17 @@ const pickDrafts = (p: { drafts: DraftRow[] }): DraftRow[] => p.drafts;
 
 function useFeed<T, P>(q: InfiniteResult<P>, pick: (page: P) => T[]): Feed<T> {
   const items = q.data?.pages.flatMap(pick) ?? [];
+  const view = loadView({
+    count: items.length,
+    loading: q.isLoading,
+    error: q.isError,
+    fetching: q.isFetching,
+  });
   return {
     items,
-    loading: q.isLoading,
+    loading: view === "loading",
+    error: view === "error" ? q.error : null,
+    refetch: () => void q.refetch(),
     hasMore: q.hasNextPage,
     loadingMore: q.isFetchingNextPage,
     loadMore: () => {
@@ -51,7 +67,7 @@ export function useThreadFeed(
   enabled = true,
   unread = false,
 ): Feed<ThreadRow> {
-  // eslint-disable-next-line react-doctor/query-destructure-result -- whole result handed to useFeed, which reads several fields
+  // whole result handed to useFeed, which reads several fields
   const q = useInfiniteQuery({
     ...threadsQuery(mailboxId, view, unread),
     enabled: enabled && Boolean(mailboxId),
@@ -64,7 +80,7 @@ export function useFolderFeed(folderId: string): Feed<ThreadRow> {
 }
 
 export function useDraftFeed(mailboxId: string, enabled = true): Feed<DraftRow> {
-  // eslint-disable-next-line react-doctor/query-destructure-result -- whole result handed to useFeed, which reads several fields
+  // whole result handed to useFeed, which reads several fields
   const q = useInfiniteQuery({ ...draftsQuery(mailboxId), enabled: enabled && Boolean(mailboxId) });
   return useFeed(q, pickDrafts);
 }

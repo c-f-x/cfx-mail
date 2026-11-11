@@ -90,7 +90,7 @@ export function DomainsSection() {
 
       <Section
         title="IMAP access"
-        description="Hostname of the Cloudflare Spectrum application that routes TCP (TLS terminated) to this Worker. Shown to users next to their app passwords; leave empty to hide IMAP."
+        description="Hostname of the Cloudflare Spectrum application that routes TCP (TLS terminated) to this Worker. Shown to users next to their app passwords."
       >
         <div className="flex flex-col gap-2 sm:flex-row">
           <Input
@@ -227,7 +227,8 @@ function DomainRow({ domain: d }: { domain: Domain }) {
             onClick={async () => {
               const ok = await confirm({
                 title: `Remove ${d.name}?`,
-                description: "The domain and its DNS records will be removed from this instance.",
+                description:
+                  "The app stops handling mail for it. Its DNS records and Cloudflare mail settings stay as they are. Only possible once it has no mailboxes.",
                 confirmLabel: "Remove",
                 destructive: true,
               });

@@ -1,8 +1,10 @@
 import { domainGrant, systemConfig, user, userInvite } from "@cfmail/db/schema";
 import { eq } from "drizzle-orm";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { usersRoutes } from "../../src/api/users.ts";
-import { applyMigrationsOnce, db, mountApp, request, resetDb } from "../support/app.ts";
+import type { Env } from "../../src/env.ts";
+import { applyMigrationsOnce, db, e, mountApp, request, resetDb } from "../support/app.ts";
+import { runCronOffline } from "../support/cron.ts";
 import {
   ADMIN_ID,
   admin,
@@ -240,6 +242,18 @@ describe("users", () => {
     expect(row).toMatchObject({ banned: true, role: "admin" });
   });
 
+  // Better Auth moves updatedAt on its own writes; an admin's edit must too.
+  it("moves the user's updatedAt when an admin edits them", async () => {
+    const lastYear = new Date(Date.now() - 365 * 86_400_000);
+    await db().update(user).set({ updatedAt: lastYear }).where(eq(user.id, MEMBER_ID));
+    const before = Math.floor(Date.now() / 1000) * 1000;
+
+    await request(asAdmin(), "PATCH", `/${MEMBER_ID}`, { role: "admin" });
+
+    const row = await db().query.user.findFirst({ where: eq(user.id, MEMBER_ID) });
+    expect(row?.updatedAt.getTime()).toBeGreaterThanOrEqual(before);
+  });
+
   it("400s an admin trying to demote themselves", async () => {
     const res = await request(asAdmin(), "PATCH", `/${ADMIN_ID}`, { role: "user" });
     expect(res.status).toBe(400);
@@ -272,11 +286,34 @@ describe("users", () => {
     expect(res.status).toBe(400);
   });
 
-  it("deletes another user", async () => {
+  // The mail side of deletion is covered in destructive-deletes.test.ts.
+  it("deletes another user: locked out and unlisted at once, row dropped by the cron", async () => {
     const res = await request(asAdmin(), "DELETE", `/${OUTSIDER_ID}`);
     expect(res.status).toBe(204);
     const row = await db().query.user.findFirst({ where: eq(user.id, OUTSIDER_ID) });
-    expect(row).toBeUndefined();
+    expect(row).toMatchObject({ banned: true, banReason: "pending-delete" });
+
+    const list = await request(asAdmin(), "GET", "/");
+    const body = (await list.json()) as { users: { id: string }[] };
+    expect(body.users.map((u) => u.id)).not.toContain(OUTSIDER_ID);
+
+    await runCronOffline(e, new Date());
+    expect(await db().query.user.findFirst({ where: eq(user.id, OUTSIDER_ID) })).toBeUndefined();
+  });
+
+  it("409s un-banning a user who is being deleted, and leaves a normal un-ban working", async () => {
+    await request(asAdmin(), "DELETE", `/${OUTSIDER_ID}`);
+    const refused = await request(asAdmin(), "PATCH", `/${OUTSIDER_ID}`, { banned: false });
+    expect(refused.status).toBe(409);
+    const row = await db().query.user.findFirst({ where: eq(user.id, OUTSIDER_ID) });
+    expect(row?.banned).toBe(true);
+
+    await request(asAdmin(), "PATCH", `/${MEMBER_ID}`, { banned: true });
+    const ok = await request(asAdmin(), "PATCH", `/${MEMBER_ID}`, { banned: false });
+    expect(ok.status).toBe(200);
+    expect((await db().query.user.findFirst({ where: eq(user.id, MEMBER_ID) }))?.banned).toBe(
+      false,
+    );
   });
 
   // ── GET/POST/DELETE /invites (admin) ────────────────────────────────────
@@ -296,17 +333,71 @@ describe("users", () => {
       role: "user",
     });
     expect(res.status).toBe(201);
-    const body = (await res.json()) as { ok: boolean; id: string; url: string; sentEmail: boolean };
+    const body = (await res.json()) as {
+      ok: boolean;
+      id: string;
+      url: string;
+      sentEmail: boolean;
+      notSentReason: string | null;
+    };
     expect(body.ok).toBe(true);
+    // No sender address is set in these tests, so the admin must be told why
+    // nothing went out, and given the link to pass on by hand.
     expect(body.sentEmail).toBe(false);
+    expect(body.notSentReason).toBe("no_sender");
     expect(body.url).toContain("/accept-invite?token=");
 
     const row = await db().query.userInvite.findFirst({ where: eq(userInvite.id, body.id) });
     expect(row).toMatchObject({ email: "invitee@example.com", role: "user" });
 
+    // The list gives each pending invite's link again, so a missed notice
+    // does not lose it; the bare token is not sent separately.
     const list = await request(asAdmin(), "GET", "/invites");
-    const listBody = (await list.json()) as { invites: { id: string }[] };
-    expect(listBody.invites.map((i) => i.id)).toContain(body.id);
+    const listBody = (await list.json()) as {
+      invites: { id: string; url: string; token?: string }[];
+    };
+    const listed = listBody.invites.find((i) => i.id === body.id);
+    expect(listed?.url).toBe(body.url);
+    expect(listed).not.toHaveProperty("token");
+  });
+
+  describe("invite email", () => {
+    // The EMAIL binding has no local simulation; `send` stands in for it.
+    async function invite(
+      send: () => Promise<unknown>,
+    ): Promise<{ sentEmail: boolean; notSentReason: string | null }> {
+      await db()
+        .insert(systemConfig)
+        .values({ key: "auth_from_address", value: "no-reply@example.com", updatedAt: new Date() });
+      const env = { ...e, EMAIL: { send } } as unknown as Env;
+      const res = await asAdmin().request(
+        "/invites",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email: "invitee@example.com" }),
+        },
+        env,
+      );
+      expect(res.status).toBe(201);
+      return (await res.json()) as { sentEmail: boolean; notSentReason: string | null };
+    }
+
+    it("reports the invite as emailed when the send succeeds", async () => {
+      const body = await invite(async () => ({ messageId: "x" }));
+      expect(body.sentEmail).toBe(true);
+      expect(body.notSentReason).toBeNull();
+    });
+
+    // The admin then shares the link by hand (users-section.tsx shows it).
+    it("reports the invite as not emailed when the send fails, and logs why", async () => {
+      const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const body = await invite(() => Promise.reject(new Error("sending domain not verified")));
+      expect(body.sentEmail).toBe(false);
+      expect(body.notSentReason).toBe("send_failed");
+      expect(logged).toHaveBeenCalledWith("notify.sendMail failed", expect.any(Error));
+      logged.mockRestore();
+    });
   });
 
   it("409s inviting an email that already has an account", async () => {

@@ -3,6 +3,7 @@ import { Perm } from "@cfmail/shared/permissions";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { attachmentsRoutes } from "../../src/api/attachments.ts";
 import { applyMigrationsOnce, db, e, mountApp, request, resetDb } from "../support/app.ts";
+import { bodyText } from "../support/body.ts";
 import {
   grantMember,
   member,
@@ -99,7 +100,7 @@ describe("attachments", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toBe("image/png");
       expect(res.headers.get("x-content-type-options")).toBe("nosniff");
-      expect(await res.text()).toBe("PNGDATA");
+      expect(await bodyText(res)).toBe("PNGDATA");
     });
 
     it("403s a key outside the caller's draft prefix", async () => {
@@ -137,7 +138,7 @@ describe("attachments", () => {
       expect(res.headers.get("content-type")).toBe("application/pdf");
       expect(res.headers.get("content-disposition")).toBe('attachment; filename="report.pdf"');
       expect(res.headers.get("x-content-type-options")).toBe("nosniff");
-      expect(await res.text()).toBe("PDFBYTES");
+      expect(await bodyText(res)).toBe("PDFBYTES");
     });
 
     it("downgrades a renderable content-type to octet-stream", async () => {
@@ -152,6 +153,17 @@ describe("attachments", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toBe("application/octet-stream");
     });
+
+    it.each(["text/javascript", "application/javascript", "text/css", "application/x-evil"])(
+      "does not echo the sender-chosen type %s",
+      async (contentType) => {
+        const { messageId } = await seedThread(db());
+        const { id, r2Key } = await seedAttachment(messageId, { filename: "x.js", contentType });
+        await e.BLOBS.put(r2Key, "alert(1)");
+        const res = await request(asOwner(), "GET", `/${id}`);
+        expect(res.headers.get("content-type")).toBe("application/octet-stream");
+      },
+    );
 
     it("404s a missing attachment row", async () => {
       const res = await request(asOwner(), "GET", "/nope");
@@ -180,7 +192,7 @@ describe("attachments", () => {
       await e.BLOBS.put(r2Key, "data");
       const res = await request(mountApp(attachmentsRoutes, member), "GET", `/${id}`);
       expect(res.status).toBe(200);
-      expect(await res.text()).toBe("data");
+      expect(await bodyText(res)).toBe("data");
     });
   });
 });

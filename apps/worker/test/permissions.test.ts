@@ -2,10 +2,11 @@ import { applyD1Migrations, env } from "cloudflare:test";
 import { makeDB } from "@cfmail/db";
 import { domain, mailbox, mailboxMember, user } from "@cfmail/db/schema";
 import { ALL_PERMS, Perm } from "@cfmail/shared/permissions";
+import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../src/env.ts";
 import { AppError } from "../src/errors.ts";
-import { requirePerm, resolveAccess } from "../src/permissions.ts";
+import { accessibleMailboxIds, requirePerm, resolveAccess } from "../src/permissions.ts";
 
 const e = env as unknown as Env & { TEST_MIGRATIONS: Parameters<typeof applyD1Migrations>[1] };
 
@@ -169,5 +170,39 @@ describe("requirePerm — service mailbox write-only member", () => {
     );
     await expectForbidden(requirePerm(db, MEMBER_ID, SERVICE_MAILBOX_ID, Perm.READ));
     await expectForbidden(requirePerm(db, MEMBER_ID, SERVICE_MAILBOX_ID, Perm.MANAGE));
+  });
+});
+
+describe("accessibleMailboxIds", () => {
+  it("lists an owned mailbox and leaves out service mailboxes", async () => {
+    expect(await accessibleMailboxIds(db, OWNER_ID)).toEqual([MAILBOX_ID]);
+  });
+
+  it("lists a mailbox shared with READ", async () => {
+    await grantMember(MAILBOX_ID, Perm.READ);
+    expect(await accessibleMailboxIds(db, MEMBER_ID)).toEqual([MAILBOX_ID]);
+  });
+
+  // A grant without READ must not open the mailbox through the combined views
+  // (All Mail, folders, contacts) when requirePerm refuses it on its own.
+  it("leaves out a membership without READ", async () => {
+    await grantMember(MAILBOX_ID, Perm.WRITE);
+    expect(await accessibleMailboxIds(db, MEMBER_ID)).toEqual([]);
+    expect(await accessibleMailboxIds(db, MEMBER_ID, { combinedView: true })).toEqual([]);
+  });
+
+  it("raises the bar to the requested bit", async () => {
+    await grantMember(MAILBOX_ID, Perm.READ);
+    expect(await accessibleMailboxIds(db, MEMBER_ID, { perm: Perm.WRITE })).toEqual([]);
+    expect(await accessibleMailboxIds(db, OWNER_ID, { perm: Perm.MANAGE })).toEqual([MAILBOX_ID]);
+  });
+
+  it("leaves out a mailbox being purged", async () => {
+    await db.update(mailbox).set({ pendingPurge: "empty" }).where(eq(mailbox.id, MAILBOX_ID));
+    expect(await accessibleMailboxIds(db, OWNER_ID)).toEqual([]);
+  });
+
+  it("leaves out a stranger's mailbox", async () => {
+    expect(await accessibleMailboxIds(db, OUTSIDER_ID)).toEqual([]);
   });
 });

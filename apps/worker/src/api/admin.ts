@@ -1,13 +1,4 @@
-import {
-  domain,
-  mailbox,
-  mailboxAiUsage,
-  mailboxMember,
-  mailboxSpamUsage,
-  message,
-  redirect,
-  user,
-} from "@cfmail/db/schema";
+import { domain, mailbox, mailboxMember, message, redirect, user } from "@cfmail/db/schema";
 import {
   adminCreateMailbox,
   adminDeleteMailbox,
@@ -18,7 +9,6 @@ import {
   updateRedirect,
   updateServiceMailbox,
 } from "@cfmail/shared/schemas";
-import { zValidator } from "@hono/zod-validator";
 import { aliasedTable, and, asc, count, desc, eq, inArray, max, ne } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -27,11 +17,13 @@ import type { AppBindings } from "../env.ts";
 import { wrapUnique } from "../errors.ts";
 import { randomToken } from "../lib/encoding.ts";
 import { authorizeMailboxCreate } from "../mailbox-access.ts";
+import { handOverMailbox } from "../mailbox-owner.ts";
 import { markMailboxPurge } from "../mailbox-purge.ts";
 import { requireAdmin, requireUser } from "../middleware.ts";
 import { mailboxNotDeletePending } from "../permissions.ts";
 import { sha256Hex } from "./svc.ts";
 import { buildPatch } from "./util.ts";
+import { zValidator } from "./validate.ts";
 
 // Admin-only mailbox & redirect management. Mounted at /api/admin.
 export function adminRoutes() {
@@ -153,7 +145,12 @@ export function adminRoutes() {
       if (patch.type === "personal")
         await db.delete(mailboxMember).where(eq(mailboxMember.mailboxId, id));
 
-      await db.update(mailbox).set(patch).where(eq(mailbox.id, id));
+      if (patch.ownerUserId !== undefined) {
+        await handOverMailbox(db, id, mb.ownerUserId, patch.ownerUserId);
+      }
+      if (patch.type !== undefined) {
+        await db.update(mailbox).set({ type: patch.type }).where(eq(mailbox.id, id));
+      }
       return c.json({ ok: true });
     })
 
@@ -172,20 +169,9 @@ export function adminRoutes() {
           replyTo: true,
           type: true,
           spamFilter: true,
-          spamAiTokenCap: true,
-          aiFeatures: true,
-          aiTokenCap: true,
         },
       });
       if (!mb) throw new HTTPException(404, { message: "not found" });
-      const usage = await db.query.mailboxSpamUsage.findFirst({
-        where: eq(mailboxSpamUsage.mailboxId, id),
-        columns: { period: true, calls: true, tokensIn: true, tokensOut: true },
-      });
-      const aiUsage = await db.query.mailboxAiUsage.findFirst({
-        where: eq(mailboxAiUsage.mailboxId, id),
-        columns: { period: true, calls: true, tokensIn: true, tokensOut: true },
-      });
       return c.json({
         id: mb.id,
         type: mb.type,
@@ -193,19 +179,6 @@ export function adminRoutes() {
         signature: mb.signature,
         replyTo: mb.replyTo,
         spamFilter: mb.spamFilter,
-        spamAiTokenCap: mb.spamAiTokenCap,
-        spamUsage: usage
-          ? { period: usage.period, calls: usage.calls, tokens: usage.tokensIn + usage.tokensOut }
-          : null,
-        aiFeatures: mb.aiFeatures,
-        aiTokenCap: mb.aiTokenCap,
-        aiUsage: aiUsage
-          ? {
-              period: aiUsage.period,
-              calls: aiUsage.calls,
-              tokens: aiUsage.tokensIn + aiUsage.tokensOut,
-            }
-          : null,
       });
     })
 
@@ -223,13 +196,11 @@ export function adminRoutes() {
         throw new HTTPException(400, { message: "temp mailboxes are not editable" });
 
       const patch = buildPatch<typeof mailbox.$inferInsert>(body, {
-        displayName: (v: string | null) => (v?.trim() ? v.trim() : null),
+        // Trimmed, and empty means none, by the schema (senderName).
+        displayName: true,
         signature: (v: string | null) => (v?.trim() ? v : null),
         replyTo: (v: string | null) => (v ? v : null),
         spamFilter: true,
-        spamAiTokenCap: true,
-        aiFeatures: true,
-        aiTokenCap: true,
       });
       if (Object.keys(patch).length === 0) return c.json({ ok: true });
 
@@ -401,7 +372,8 @@ export function adminRoutes() {
       if (!mb) throw new HTTPException(404, { message: "not found" });
 
       const patch = buildPatch<typeof mailbox.$inferInsert>(body, {
-        displayName: (v: string | null) => (v?.trim() ? v.trim() : null),
+        // Trimmed, and empty means none, by the schema (senderName).
+        displayName: true,
         mode: { to: "serviceMode" },
       });
       if (Object.keys(patch).length === 0) return c.json({ ok: true });

@@ -309,10 +309,17 @@ function zoneName(prefix: string, key: string, zone: "zen" | "authbl" | "dbl" | 
   return `${prefix}.${key}.${zone}.dq.spamhaus.net`;
 }
 
+// A failed query answers nothing, which reads "not listed". It is logged,
+// because a resolver outage otherwise switches every lookup off unseen. The
+// name holds the query key and what was looked up, so it stays out of the log.
 async function rawAnswers(name: string): Promise<string[]> {
   try {
     return await dohQuery(name, "A");
-  } catch {
+  } catch (err) {
+    console.error("spamhaus_dqs_lookup_failed", {
+      zone: name.match(/\.([a-z]+)\.dq\.spamhaus\.net$/)?.[1] ?? null,
+      error: (err instanceof Error ? err.message : String(err)).replaceAll(name, "<query>"),
+    });
     return [];
   }
 }

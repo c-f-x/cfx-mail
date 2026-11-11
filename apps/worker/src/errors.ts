@@ -5,6 +5,7 @@
 // throw Hono's HTTPException.
 export type AppErrorCode =
   | "bad_request"
+  | "unauthenticated"
   | "forbidden"
   | "not_found"
   | "conflict"
@@ -25,6 +26,7 @@ export class AppError extends Error {
 
 const STATUS = {
   bad_request: 400,
+  unauthenticated: 401,
   forbidden: 403,
   not_found: 404,
   conflict: 409,
@@ -52,7 +54,7 @@ export async function wrapUnique<T>(fn: () => Promise<T>, message: string): Prom
   }
 }
 
-function isUniqueViolation(err: unknown): boolean {
+export function isUniqueViolation(err: unknown): boolean {
   for (let e = err; e instanceof Error; e = e.cause) {
     if (/UNIQUE/i.test(e.message)) return true;
   }

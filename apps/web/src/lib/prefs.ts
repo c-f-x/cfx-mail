@@ -23,8 +23,8 @@ export function useUserPrefs() {
       if (res.error) throw new Error(res.error.message ?? "Failed to save preferences");
       return json;
     },
-    // Write straight into the cache rather than refetching: the session cookie
-    // cache (auth.ts) can lag ~60s, and this client is the only writer.
+    // Write straight into the cache rather than refetching: this client is the
+    // only writer.
     onSuccess: (json) => {
       qc.setQueryData<MeData>(meQuery.queryKey, (old) =>
         old?.user ? { ...old, user: { ...old.user, preferences: json } } : old,

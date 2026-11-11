@@ -286,6 +286,176 @@ describe("ingestRaw — trashed thread resurfacing", () => {
   });
 });
 
+describe("ingestRaw — threading an imported conversation", () => {
+  // Alice writes to the mailbox and Bob, Bob answers, Alice answers him, and
+  // the owner closes it. Each entry carries the headers a mail client writes.
+  interface Mail {
+    id: string;
+    from: string;
+    to: string;
+    cc?: string;
+    parents: string[];
+    hoursIn: number;
+  }
+  const CONVERSATION: Mail[] = [
+    {
+      id: "<p@alice.test>",
+      from: "Alice <alice@alice.test>",
+      to: `Me <${ADDRESS}>`,
+      cc: "bob@bob.test",
+      parents: [],
+      hoursIn: 0,
+    },
+    {
+      id: "<r1@bob.test>",
+      from: "Bob <bob@bob.test>",
+      to: "alice@alice.test",
+      cc: ADDRESS,
+      parents: ["<p@alice.test>"],
+      hoursIn: 1,
+    },
+    {
+      id: "<r2@alice.test>",
+      from: "Alice <alice@alice.test>",
+      to: "bob@bob.test",
+      cc: ADDRESS,
+      parents: ["<p@alice.test>", "<r1@bob.test>"],
+      hoursIn: 2,
+    },
+    {
+      id: "<r3@example.com>",
+      from: `Me <${ADDRESS}>`,
+      to: "alice@alice.test, bob@bob.test",
+      parents: ["<p@alice.test>", "<r1@bob.test>", "<r2@alice.test>"],
+      hoursIn: 3,
+    },
+  ];
+
+  // What the import endpoint passes for one exported message: its own date,
+  // its direction from the From address, read, no spam evaluation, not live.
+  function importOf(m: Mail, start: Date) {
+    const when = new Date(start.getTime() + m.hoursIn * 3_600_000);
+    const out = m.from.includes(ADDRESS);
+    const headers = [`Date: ${when.toUTCString()}`];
+    if (m.cc) headers.push(`Cc: ${m.cc}`);
+    if (m.parents.length) {
+      headers.push(`In-Reply-To: ${m.parents.at(-1)}`, `References: ${m.parents.join(" ")}`);
+    }
+    return importOpts({
+      raw: eml({ from: m.from, to: m.to, subject: "Quarterly figures", messageId: m.id, headers }),
+      direction: out ? "out" : "in",
+      deliveredTo: out ? null : ADDRESS,
+      flags: out ? Flag.SENT | Flag.SEEN : Flag.SEEN,
+      receivedAt: out ? null : when,
+      sentAt: out ? when : null,
+    });
+  }
+
+  const RECENT = new Date(Date.now() - 3 * 86_400_000);
+  // Well past the 180 days a header match is honoured for live mail.
+  const OLD = new Date("2023-03-01T09:00:00Z");
+
+  async function threadIds(): Promise<string[]> {
+    const rows = await db.query.message.findMany({
+      where: eq(message.mailboxId, MAILBOX_ID),
+      columns: { threadId: true },
+    });
+    return [...new Set(rows.map((r) => r.threadId))];
+  }
+
+  it("files a parent imported after its reply in the reply's conversation", async () => {
+    const [parent, reply] = CONVERSATION;
+    await ingestRaw(e, db, importOf(reply!, RECENT));
+    await ingestRaw(e, db, importOf(parent!, RECENT));
+
+    expect(await threadIds()).toHaveLength(1);
+  });
+
+  it("keeps replies to mail older than 180 days with the mail they answer", async () => {
+    for (const m of CONVERSATION) {
+      // eslint-disable-next-line no-await-in-loop -- one at a time, in order, is the case
+      await ingestRaw(e, db, importOf(m, OLD));
+    }
+
+    expect(await threadIds()).toHaveLength(1);
+    const th = (await db.query.thread.findMany({ where: eq(thread.mailboxId, MAILBOX_ID) }))[0]!;
+    expect(th.msgCount).toBe(CONVERSATION.length);
+  });
+
+  // The web importer sends 25 messages at once, so a reply is often stored
+  // while, or before, the message it answers.
+  it.each([
+    ["a recent", "in order", RECENT, CONVERSATION],
+    ["a recent", "newest first", RECENT, CONVERSATION.toReversed()],
+    ["an old", "in order", OLD, CONVERSATION],
+    ["an old", "newest first", OLD, CONVERSATION.toReversed()],
+  ])(
+    "keeps %s conversation together when imported in parallel, %s",
+    async (_, __, start, mails) => {
+      await Promise.all(mails.map((m) => ingestRaw(e, db, importOf(m, start))));
+
+      expect(await threadIds()).toHaveLength(1);
+      const th = (await db.query.thread.findMany({ where: eq(thread.mailboxId, MAILBOX_ID) }))[0]!;
+      expect(th.msgCount).toBe(CONVERSATION.length);
+    },
+  );
+});
+
+describe("ingestRaw — threading a mailing-list conversation", () => {
+  // On a list, each post comes from whoever writes next, addressed to the
+  // list. Most posters have not written in the conversation before.
+  const LIST = "dev.lists.test";
+  const POSTS = ["ana", "ben", "cai", "dee"].map((name, i) => ({
+    id: `<post${i}@lists.test>`,
+    from: `${name}@members.test`,
+    parents: Array.from({ length: i }, (_, j) => `<post${j}@lists.test>`),
+  }));
+
+  function postOf(p: (typeof POSTS)[number], live = false) {
+    const headers = [`List-Id: Dev list <${LIST}>`, `Delivered-To: ${ADDRESS}`];
+    if (p.parents.length) {
+      headers.push(`In-Reply-To: ${p.parents.at(-1)}`, `References: ${p.parents.join(" ")}`);
+    }
+    return importOpts({
+      raw: eml({
+        from: p.from,
+        to: `dev@lists.test`,
+        subject: "Release plan",
+        messageId: p.id,
+        headers,
+      }),
+      deliveredTo: ADDRESS,
+      receivedAt: new Date(),
+      ...(live ? { live: true } : {}),
+    });
+  }
+
+  async function threadCount(): Promise<number> {
+    const rows = await db.query.message.findMany({
+      where: eq(message.mailboxId, MAILBOX_ID),
+      columns: { threadId: true },
+    });
+    return new Set(rows.map((r) => r.threadId)).size;
+  }
+
+  it.each([
+    ["imported in order", POSTS, false],
+    ["imported newest first", POSTS.toReversed(), false],
+    ["delivered live in order", POSTS, true],
+  ])("keeps posts from new members together when %s", async (_, posts, live) => {
+    for (const p of posts) {
+      // eslint-disable-next-line no-await-in-loop -- the order is the case
+      await ingestRaw(e, db, postOf(p, live));
+    }
+    expect(await threadCount()).toBe(1);
+  });
+
+  it("keeps posts from new members together when imported in parallel", async () => {
+    await Promise.all(POSTS.map((p) => ingestRaw(e, db, postOf(p))));
+    expect(await threadCount()).toBe(1);
+  });
+});
+
 describe("isAuthenticated", () => {
   it("trusts DMARC pass alone", () => {
     expect(isAuthenticated({ spf: "fail", dkim: "fail", dmarc: "pass" })).toBe(true);

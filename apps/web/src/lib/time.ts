@@ -125,3 +125,26 @@ export function useNow(intervalMs = 30_000): number {
   }, [intervalMs]);
   return now;
 }
+
+// ─── Picking a time ───────────────────────────────────────────────────────
+// Used by the scheduled-send and reminder pickers, in the user's local zone.
+
+/** Stamp a "HH:mm" wall-clock time onto a calendar day. */
+export function combineDateTime(day: Date, time: string): Date {
+  const [h, m] = time.split(":").map(Number);
+  const out = new Date(day);
+  out.setHours(h ?? 0, m ?? 0, 0, 0);
+  return out;
+}
+
+/** Whether `day` falls on a calendar day before the one `now` is in. */
+export function isBeforeDay(day: Date, now: Date): boolean {
+  return day < atHour(now, 0);
+}
+
+/** The start of `hour` on the same day. */
+export function atHour(d: Date, hour: number): Date {
+  const out = new Date(d);
+  out.setHours(hour, 0, 0, 0);
+  return out;
+}

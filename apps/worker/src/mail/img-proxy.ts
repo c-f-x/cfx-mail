@@ -90,11 +90,67 @@ async function rewriteSrcset(secret: string, srcset: string): Promise<string> {
   return parts.filter(Boolean).join(", ");
 }
 
-// Matches `url( … )` in CSS — both `url(http://x)` and `url("http://x")`.
-export const CSS_URL_RE = /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi;
-// `@import` pulls in a remote stylesheet — a tracking vector with no legit use
-// in a sanitized mail body. Strip the whole rule rather than try to proxy it.
-const CSS_IMPORT_RE = /@import[^;]+;/gi;
+const CSS_URL_OPEN = /url\(/gi;
+// What follows "url(": optional space, an optional quote, the target, the same
+// quote, optional space, ")". Sticky so it is tried exactly where a "url(" sits.
+const CSS_URL_BODY = /\s*(['"]?)([^'")]+)\1\s*\)/y;
+const CSS_URL_VALUE_START = /\s*['"]?/y;
+const CSS_URL_STOP = /['")]/g;
+
+/**
+ * Replace each `url( … )` in a CSS string — `url(http://x)` and `url("http://x")`
+ * — with `fn(full, target)`. A hand-rolled scan rather than one regex: on
+ * `url(url(url(…` without a closing `)` the regex retried from every `url(` and
+ * rescanned the rest each time (quadratic). Here a failed `url(` whose target
+ * ran into a quote or the end of the input also fails every `url(` inside that
+ * run, so the scan jumps past it.
+ */
+export function replaceCssUrls(css: string, fn: (full: string, target: string) => string): string {
+  const open = new RegExp(CSS_URL_OPEN);
+  const body = new RegExp(CSS_URL_BODY);
+  const valueStart = new RegExp(CSS_URL_VALUE_START);
+  const stop = new RegExp(CSS_URL_STOP);
+  let out = "";
+  let last = 0;
+  for (let m = open.exec(css); m; m = open.exec(css)) {
+    const at = open.lastIndex;
+    body.lastIndex = at;
+    const hit = body.exec(css);
+    if (hit) {
+      out += css.slice(last, m.index) + fn(css.slice(m.index, body.lastIndex), hit[2] ?? "");
+      last = body.lastIndex;
+      open.lastIndex = last;
+      continue;
+    }
+    valueStart.lastIndex = at;
+    valueStart.exec(css);
+    stop.lastIndex = valueStart.lastIndex;
+    const end = stop.exec(css);
+    if (!end) break;
+    if (end[0] !== ")") open.lastIndex = end.index;
+  }
+  return out + css.slice(last);
+}
+
+/**
+ * `@import` pulls in a remote stylesheet — a tracking vector with no legit use
+ * in a sanitized mail body. Strips each rule (`@import … ;`). Replaces
+ * `/@import[^;]+;/gi`, which rescanned from every `@import` when no `;` followed.
+ */
+export function stripCssImports(css: string): string {
+  const open = /@import/gi;
+  let out = "";
+  let last = 0;
+  for (let m = open.exec(css); m; m = open.exec(css)) {
+    const semi = css.indexOf(";", open.lastIndex);
+    if (semi === -1) break;
+    if (semi === open.lastIndex) continue; // "@import;" has no target
+    out += css.slice(last, m.index);
+    last = semi + 1;
+    open.lastIndex = last;
+  }
+  return out + css.slice(last);
+}
 
 /**
  * Rewrite remote URLs inside a CSS string (a `style` attribute or a `<style>`
@@ -102,9 +158,12 @@ const CSS_IMPORT_RE = /@import[^;]+;/gi;
  * `@import` outright. Relative/`data:` URLs are left untouched.
  */
 async function rewriteCss(secret: string, css: string): Promise<string> {
-  const cleaned = css.replace(CSS_IMPORT_RE, "");
+  const cleaned = stripCssImports(css);
   const urls = new Set<string>();
-  for (const m of cleaned.matchAll(CSS_URL_RE)) if (m[2]) urls.add(m[2]);
+  replaceCssUrls(cleaned, (full, u) => {
+    urls.add(u);
+    return full;
+  });
   if (urls.size === 0) return cleaned;
   const map = new Map<string, string>();
   await Promise.all(
@@ -113,7 +172,7 @@ async function rewriteCss(secret: string, css: string): Promise<string> {
       if (proxied) map.set(u, proxied);
     }),
   );
-  return cleaned.replace(CSS_URL_RE, (full, _q, u) => {
+  return replaceCssUrls(cleaned, (full, u) => {
     const proxied = map.get(u);
     return proxied ? `url("${proxied}")` : full;
   });
@@ -206,7 +265,7 @@ function rewriteCidSrcset(srcset: string, messageId: string, cidMap: Map<string,
 // Rewrite `cid:` references inside a CSS string (a `style` attribute or `<style>`
 // block) — i.e. `background:url(cid:…)`. Non-cid `url(…)` were already proxied.
 function rewriteCidCss(css: string, messageId: string, cidMap: Map<string, string>): string {
-  return css.replace(CSS_URL_RE, (full, _q, u) => {
+  return replaceCssUrls(css, (full, u) => {
     const mapped = cidToUrl(u, messageId, cidMap);
     return mapped ? `url("${mapped}")` : full;
   });

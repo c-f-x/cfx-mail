@@ -87,12 +87,11 @@ export function RichEditor({
   const savedRange = useRef<Range | null>(null);
   // Captured once so the mount effect needs no changing deps (seed-on-mount).
   const initialHtmlRef = useRef(initialHtml);
-  // react-doctor-disable-next-line no-event-handler -- pendingCmd is a rich-text command queued during promote-to-HTML, replayed once on mount; not a substitute for an event handler
+  // pendingCmd is a rich-text command queued during promote-to-HTML, replayed once on mount; not a substitute for an event handler
   const pendingCmdRef = useRef(pendingCmd);
 
   // Memoized: identity feeds the seed-on-mount effect and useImperativeHandle
   // deps, which the (compiler-unaware) exhaustive-deps lint requires to be stable.
-  // eslint-disable-next-line react-doctor/react-compiler-no-manual-memoization
   const saveSelection = useCallback(() => {
     const sel = window.getSelection();
     if (sel?.rangeCount && elRef.current?.contains(sel.anchorNode)) {
@@ -100,7 +99,6 @@ export function RichEditor({
     }
   }, []);
 
-  // eslint-disable-next-line react-doctor/react-compiler-no-manual-memoization
   const exec = useCallback(
     (cmd: string, value?: string) => {
       const el = elRef.current;
@@ -121,7 +119,6 @@ export function RichEditor({
     [onChange, saveSelection],
   );
 
-  // eslint-disable-next-line react-doctor/react-compiler-no-manual-memoization
   const insertHtml = useCallback(
     (html: string) => {
       const el = elRef.current;
@@ -148,7 +145,7 @@ export function RichEditor({
   // caret never jumps. Run any command queued during the promote-to-HTML step.
   useEffect(() => {
     const el = elRef.current;
-    // react-doctor-disable-next-line dangerous-html-sink -- initialHtml is the user's own compose draft (self-authored); the outbound body is sanitized via DOMPurify in compose-dock's buildBody before send.
+    // initialHtml is the user's own compose draft (self-authored); the outbound body is sanitized via DOMPurify in compose-dock's buildBody before send.
     if (el && initialHtmlRef.current) el.innerHTML = initialHtmlRef.current;
     const queued = pendingCmdRef.current;
     if (queued) {
@@ -162,7 +159,7 @@ export function RichEditor({
     <div
       ref={elRef}
       contentEditable
-      role="textbox" // react-doctor-disable-line prefer-tag-over-role -- a contentEditable rich-text surface cannot be a real <input>; role="textbox" is intentional
+      role="textbox" // a contentEditable rich-text surface cannot be a real <input>; role="textbox" is intentional
       tabIndex={0}
       aria-multiline="true"
       aria-label="Message body"
@@ -415,7 +412,7 @@ export function textToHtml(s: string): string {
 // elements become line breaks; everything else collapses to its text content.
 export function htmlToText(html: string): string {
   const el = document.createElement("div");
-  // react-doctor-disable-next-line dangerous-html-sink -- detached div never inserted into the DOM; used only for textContent extraction
+  // detached div never inserted into the DOM; used only for textContent extraction
   el.innerHTML = html
     .replace(/<(br|\/p|\/div|\/li|\/h[1-6])\s*>/gi, "\n")
     .replace(/<li[^>]*>/gi, "• ");

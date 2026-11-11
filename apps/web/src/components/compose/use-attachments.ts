@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { ApiError, rpc, unwrap } from "@/lib/api.ts";
+import { rpc, unwrap } from "@/lib/api.ts";
 import { downscaleImage } from "@/lib/resize-image.ts";
-import { canStripMetadata, stripImageMetadata } from "@/lib/strip-image-metadata.ts";
+import { metadataRefusedMessage, stripImageMetadata } from "@/lib/strip-image-metadata.ts";
 import {
   CID_ATTR,
   draftBlobUrl,
@@ -72,14 +72,7 @@ export function useAttachments({ initial, embedInlineHtml }: Options) {
       );
       return { ...up, filename: file.name, ...extra };
     } catch (err) {
-      const msg =
-        err instanceof ApiError
-          ? typeof err.payload === "object" && err.payload && "message" in err.payload
-            ? String((err.payload as { message: unknown }).message)
-            : `upload failed (${err.status})`
-          : err instanceof Error
-            ? err.message
-            : "upload failed";
+      const msg = err instanceof Error ? err.message : "upload failed";
       toast.error(`${file.name}: ${msg}`);
       return null;
     } finally {
@@ -115,14 +108,22 @@ export function useAttachments({ initial, embedInlineHtml }: Options) {
     setPendingImages([]);
     if (!images.length) return;
 
-    const prepared = await Promise.all(
-      images.map(async (file) => {
-        // Downscale first (this re-encodes and already drops metadata), then
-        // strip — a no-op on a clean re-encode but needed for un-resized images.
-        const sized = resizeMax ? await downscaleImage(file, resizeMax) : file;
-        return stripMeta && canStripMetadata(sized.type) ? await stripImageMetadata(sized) : sized;
-      }),
-    );
+    const prepared = (
+      await Promise.all(
+        images.map(async (file) => {
+          // Downscale first (this re-encodes and already drops metadata), then
+          // strip — a no-op on a clean re-encode but needed for un-resized images.
+          const sized = resizeMax ? await downscaleImage(file, resizeMax) : file;
+          if (!stripMeta) return sized;
+          const stripped = await stripImageMetadata(sized);
+          if (stripped.ok) return stripped.file;
+          // The sender asked for the details to go; an image that still has
+          // them is not sent.
+          toast.error(metadataRefusedMessage(file.name));
+          return null;
+        }),
+      )
+    ).filter((f): f is File => f !== null);
 
     if (placement === "attachment") {
       const ups = await Promise.all(prepared.map((f) => uploadBlob(f)));

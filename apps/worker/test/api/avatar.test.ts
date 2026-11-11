@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { avatarRoutes } from "../../src/api/avatar.ts";
 import { applyMigrationsOnce, db, e, mountApp, request, resetDb } from "../support/app.ts";
+import { bodyText } from "../support/body.ts";
 import { OWNER_ID, owner, seedBase } from "../support/seed.ts";
 
 const asOwner = () => mountApp(avatarRoutes, owner);
@@ -39,7 +40,7 @@ describe("avatar", () => {
       expect(res.headers.get("content-type")).toBe("image/png");
       expect(res.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
       expect(res.headers.get("x-content-type-options")).toBe("nosniff");
-      expect(await res.text()).toBe("IMGBYTES");
+      expect(await bodyText(res)).toBe("IMGBYTES");
     });
 
     it("downgrades a non-allowed content-type to octet-stream", async () => {

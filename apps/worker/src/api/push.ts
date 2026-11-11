@@ -1,7 +1,6 @@
 import { NOTIFY_LEVELS } from "@cfmail/db/enums";
 import { mailboxNotify, pushSubscription } from "@cfmail/db/schema";
 import { Perm } from "@cfmail/shared/permissions";
-import { zValidator } from "@hono/zod-validator";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -11,6 +10,7 @@ import { getOrCreateVapid } from "../mail/push.ts";
 import { requireUser } from "../middleware.ts";
 import { requirePerm } from "../permissions.ts";
 import { isBlockedHost } from "../ssrf.ts";
+import { zValidator } from "./validate.ts";
 
 // Push endpoints are always public HTTPS hosts handed out by a browser push
 // service. Reject anything else at registration so the fan-out fetch can never
@@ -40,8 +40,7 @@ const subscribeBody = z.object({
   keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) }),
 });
 
-const lvl = z.enum(NOTIFY_LEVELS);
-const configBody = z.object({ high: lvl, normal: lvl, low: lvl });
+const configBody = z.object({ level: z.enum(NOTIFY_LEVELS) });
 
 export function pushRoutes() {
   const r = new Hono<AppBindings>()
@@ -86,17 +85,14 @@ export function pushRoutes() {
       return c.body(null, 204);
     })
 
-    // Per-mailbox notification config for this user. Each tier (high/normal/low)
-    // maps to a style; an absent mailbox means off.
+    // Per-mailbox notification level for this user; an absent mailbox means off.
     .get("/mailboxes", async (c) => {
       const db = dbFromCtx(c);
       const u = c.get("user")!;
       const rows = await db
         .select({
           mailboxId: mailboxNotify.mailboxId,
-          high: mailboxNotify.high,
-          normal: mailboxNotify.normal,
-          low: mailboxNotify.low,
+          level: mailboxNotify.level,
         })
         .from(mailboxNotify)
         .where(eq(mailboxNotify.userId, u.id));
@@ -109,8 +105,8 @@ export function pushRoutes() {
       const id = c.req.param("id");
       const cfg = c.req.valid("json");
       await requirePerm(db, u.id, id, Perm.READ);
-      // All-none means "off" — drop the row so it no longer notifies.
-      if (cfg.high === "none" && cfg.normal === "none" && cfg.low === "none") {
+      // "none" means "off" — drop the row so it no longer notifies.
+      if (cfg.level === "none") {
         await db
           .delete(mailboxNotify)
           .where(and(eq(mailboxNotify.mailboxId, id), eq(mailboxNotify.userId, u.id)));

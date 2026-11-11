@@ -1,9 +1,8 @@
 import type { DB } from "@cfmail/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Env } from "../src/env.ts";
 import { hblHash } from "../src/mail/dnsbl.ts";
 import type { ParsedEmail } from "../src/mail/mime.ts";
-import { evaluateSpam, parseAiResponse, parseAuthResults } from "../src/mail/spam.ts";
+import { evaluateSpam, parseAuthResults } from "../src/mail/spam.ts";
 
 function parsed(opts: {
   authResults?: string;
@@ -27,10 +26,7 @@ function parsed(opts: {
   } as unknown as ParsedEmail;
 }
 
-// Auth/standard paths touch neither the AI binding nor the DB beyond the one
-// system_config read for the Spamhaus key.
-const fakeEnv = {} as Env;
-
+// The DB is only touched for the one system_config read of the Spamhaus key.
 function dbWithDqsKey(key: string | null, hbl = false): DB {
   const value = key ? JSON.stringify({ key, hbl }) : null;
   return {
@@ -41,10 +37,8 @@ function dbWithDqsKey(key: string | null, hbl = false): DB {
 const fakeDb = dbWithDqsKey(null);
 
 function evalStandard(p: ParsedEmail, db: DB = fakeDb) {
-  return evaluateSpam(fakeEnv, db, {
-    mailboxId: "m1",
+  return evaluateSpam(db, {
     level: "standard",
-    aiTokenCap: null,
     parsed: p,
     fromEnvelope: "sender@elsewhere.com",
   });
@@ -97,10 +91,8 @@ describe("evaluateSpam — authentication", () => {
 
 describe("evaluateSpam — auth-only level ignores content", () => {
   it("does not escalate on spammy content when level is auth", async () => {
-    const r = await evaluateSpam(fakeEnv, fakeDb, {
-      mailboxId: "m1",
+    const r = await evaluateSpam(fakeDb, {
       level: "auth",
-      aiTokenCap: null,
       parsed: parsed({
         authResults: "mx; spf=pass; dkim=pass; dmarc=none",
         subject: "CONGRATULATIONS YOU WON",
@@ -123,20 +115,6 @@ describe("evaluateSpam — heuristics (standard)", () => {
     );
     expect(r.score).toBeGreaterThanOrEqual(5);
     expect(r.verdict).toBe("spam");
-  });
-});
-
-describe("parseAiResponse", () => {
-  it("parses a JSON verdict embedded in model output", () => {
-    expect(parseAiResponse('Sure: {"verdict":"spam","reason":"phishing link"}')).toEqual({
-      verdict: "spam",
-      reason: "phishing link",
-    });
-  });
-
-  it("rejects malformed or invalid verdicts", () => {
-    expect(parseAiResponse("no json here")).toBeNull();
-    expect(parseAiResponse('{"verdict":"maybe"}')).toBeNull();
   });
 });
 
@@ -298,6 +276,7 @@ describe("evaluateSpam — Spamhaus DQS", () => {
   });
 
   it("ignores the 127.255.255.x error codes instead of reading them as listings", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
     stubDoh({
       "4.3.2.1/zen": ["127.255.255.254"],
       "elsewhere.com/dbl": ["127.255.255.250"],
@@ -311,6 +290,9 @@ describe("evaluateSpam — Spamhaus DQS", () => {
       dbWithDqsKey(DQS_KEY),
     );
     expect(r).toMatchObject({ verdict: "clean", score: 0 });
+    // The error codes are reported, so a disabled key does not go unnoticed.
+    expect(logged).toHaveBeenCalledWith(expect.stringMatching(/^spamhaus dqs: /));
+    logged.mockRestore();
   });
 
   // The Spamhaus Blocklist Tester lists the full test hostname, never the
@@ -348,10 +330,8 @@ describe("evaluateSpam — Spamhaus DQS", () => {
 
   it("makes no DQS query at the auth level", async () => {
     const asked = stubDoh({ "elsewhere.com/dbl": ["127.0.1.2"] });
-    await evaluateSpam(fakeEnv, dbWithDqsKey(DQS_KEY), {
-      mailboxId: "m1",
+    await evaluateSpam(dbWithDqsKey(DQS_KEY), {
       level: "auth",
-      aiTokenCap: null,
       parsed: parsed({ authResults: "mx; spf=pass; dkim=pass; dmarc=none" }),
       fromEnvelope: "sender@elsewhere.com",
     });
@@ -372,8 +352,8 @@ describe("evaluateSpam — content scanning", () => {
       }),
       dbWithDqsKey(DQS_KEY),
     );
-    // Legitimate marketing reads like this; only reputation or the AI level may
-    // flag a message whose sender is verified.
+    // Legitimate marketing reads like this; only reputation may flag a message
+    // whose sender is verified.
     expect(r).toMatchObject({ verdict: "clean", score: 0 });
   });
 

@@ -1,10 +1,12 @@
 import type { DB } from "@cfmail/db";
 import { systemConfig } from "@cfmail/db/schema";
 import { eq } from "drizzle-orm";
+import type { Env } from "./env.ts";
 import { randomBase64 } from "./lib/encoding.ts";
 import { importMasterKey } from "./mail/pgp.ts";
 
 const SECRET_KEY = "auth_secret";
+const AUTH_SECRET_MIN_LENGTH = 32;
 const PGP_MASTER_KEY = "pgp_master_key";
 export const IMAP_HOST_KEY = "imap_host";
 export const IMAP_PORT_KEY = "imap_port";
@@ -24,10 +26,25 @@ export async function setConfig(db: DB, key: string, value: string): Promise<voi
     .onConflictDoUpdate({ target: systemConfig.key, set: { value, updatedAt: new Date() } });
 }
 
-// Returns the auth secret, generating + persisting one on first call.
-// The INSERT-then-SELECT pattern handles concurrent isolates racing to
-// initialise — only the first writer's value wins, others read it back.
-export async function getOrCreateAuthSecret(db: DB): Promise<string> {
+// The secret that signs sessions and image-proxy URLs. Every reader goes
+// through here, so they cannot disagree about which secret is in use.
+//
+// With the AUTH_SECRET Worker secret set, that is the secret and the database
+// is neither read nor written: a copy of the database cannot forge a session.
+// Every real deployment sets it (AGENTS.md, section 4, step 4).
+// Without it, one is generated and persisted on first call, which local
+// development and the tests rely on. The INSERT-then-SELECT pattern handles
+// concurrent isolates racing to initialise: only the first writer's value wins,
+// others read it back.
+export async function getOrCreateAuthSecret(
+  env: Pick<Env, "AUTH_SECRET">,
+  db: DB,
+): Promise<string> {
+  if (env.AUTH_SECRET) {
+    if (env.AUTH_SECRET.length < AUTH_SECRET_MIN_LENGTH)
+      throw new Error(`AUTH_SECRET must be at least ${AUTH_SECRET_MIN_LENGTH} characters.`);
+    return env.AUTH_SECRET;
+  }
   const existing = await getConfig(db, SECRET_KEY);
   if (existing) return existing;
   const generated = randomBase64(32);
@@ -42,7 +59,7 @@ export async function getOrCreateAuthSecret(db: DB): Promise<string> {
 
 // Returns the gateway-PGP master key (CryptoKey) used to wrap mailbox private
 // keys at rest, generating + persisting a 32-byte secret on first call. Same
-// lazy-init/race pattern as the auth secret (invariant 7).
+// lazy-init/race pattern as the auth secret (invariant 4).
 export async function getOrCreatePgpMasterKey(db: DB): Promise<CryptoKey> {
   let secret = await getConfig(db, PGP_MASTER_KEY);
   if (!secret) {

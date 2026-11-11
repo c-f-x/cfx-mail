@@ -205,7 +205,7 @@ describe("stripTrackers", () => {
 
 function fetchStub(bodies: Record<string, string | number>) {
   return vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
+    const url = input instanceof Request ? input.url : String(input);
     const key = url.includes("MailTrackerBlocker") ? "mtb" : "easyprivacy";
     const body = bodies[key];
     if (typeof body === "number") return new Response("nope", { status: body });
@@ -247,6 +247,18 @@ describe("refreshTrackerList / getTrackerRules", () => {
     expect(stored.nextRefreshAt).toBe(NOW.getTime() + 24 * HOUR);
   });
 
+  it("fetches both lists at a pinned commit, never at a moving ref", async () => {
+    const fetch = fetchStub(BOTH);
+    await refreshTrackerList(db(), NOW, fetch);
+    const urls = vi
+      .mocked(fetch)
+      .mock.calls.map(([input]) => (input instanceof Request ? input.url : String(input)));
+    expect(urls).toHaveLength(2);
+    for (const url of urls) {
+      expect(url).toMatch(/^https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/[0-9a-f]{40}\//);
+    }
+  });
+
   it("does not refetch until the stored copy is due", async () => {
     const fetch = fetchStub(BOTH);
     await refreshTrackerList(db(), NOW, fetch);
@@ -257,6 +269,7 @@ describe("refreshTrackerList / getTrackerRules", () => {
   });
 
   it("keeps a source's previous rules when its fetch fails and retries sooner", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
     await refreshTrackerList(db(), NOW, fetchStub(BOTH));
     const later = new Date(NOW.getTime() + 25 * HOUR);
     await refreshTrackerList(db(), later, fetchStub({ mtb: 503, easyprivacy: EASYPRIVACY_TXT }));
@@ -266,9 +279,15 @@ describe("refreshTrackerList / getTrackerRules", () => {
     expect(stored.nextRefreshAt).toBe(later.getTime() + HOUR);
     expect(stored.sources.mailtrackerblocker.fetchedAt).toBe(NOW.getTime());
     expect(stored.sources.easyprivacy.fetchedAt).toBe(later.getTime());
+    expect(logged).toHaveBeenCalledWith(
+      "tracker list fetch failed: mailtrackerblocker",
+      expect.anything(),
+    );
+    logged.mockRestore();
   });
 
   it("treats an unparseable upstream (format drift) as a failed fetch", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
     await refreshTrackerList(db(), NOW, fetchStub(BOTH));
     const later = new Date(NOW.getTime() + 25 * HOUR);
     await refreshTrackerList(
@@ -279,6 +298,11 @@ describe("refreshTrackerList / getTrackerRules", () => {
     const stored = JSON.parse((await getConfig(db(), TRACKER_LIST_KEY))!);
     expect(stored.sources.mailtrackerblocker.fetchedAt).toBe(NOW.getTime());
     expect(stored.nextRefreshAt).toBe(later.getTime() + HOUR);
+    expect(logged).toHaveBeenCalledWith(
+      "tracker list fetch failed: mailtrackerblocker",
+      expect.anything(),
+    );
+    logged.mockRestore();
   });
 
   it("drops sources that are no longer configured", async () => {

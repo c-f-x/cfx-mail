@@ -2,7 +2,7 @@ import { type PointerEvent as ReactPointerEvent, useRef, useState } from "react"
 import { haptic } from "./haptics.ts";
 
 // Past this horizontal travel a release commits the swipe action; below it the
-// row springs back. Tuned to feel like Gmail's "full swipe to act".
+// row springs back, so only a full swipe acts.
 const COMMIT_PX = 96;
 // Movement under this is treated as a tap/long-press, not a drag.
 const TAP_SLOP_PX = 8;

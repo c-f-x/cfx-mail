@@ -132,11 +132,11 @@ function SearchPage() {
   // Inputs are driven by local state for snappiness; committed to the URL on a
   // debounce. `lastWritten` lets us tell our own writes from external nav (back
   // button) so we can resync without a feedback loop.
-  // eslint-disable-next-line react-doctor/no-event-handler -- editable draft mirrors URL filters for snappy typing; committed to the URL on a debounce.
+  // editable draft mirrors URL filters for snappy typing; committed to the URL on a debounce.
   const [form, setForm] = useState<SearchParams>(search);
   const lastWritten = useRef<string | undefined>(undefined);
   if (lastWritten.current === undefined) lastWritten.current = JSON.stringify(search);
-  // eslint-disable-next-line react-doctor/no-event-handler -- paging window; reset alongside form on filter changes.
+  // paging window; reset alongside form on filter changes.
   const [limit, setLimit] = useState(PAGE_SIZE);
   const queryRef = useRef<HTMLInputElement>(null);
 
@@ -150,7 +150,7 @@ function SearchPage() {
     const key = JSON.stringify(search);
     if (key !== lastWritten.current) {
       lastWritten.current = key;
-      // eslint-disable-next-line react-doctor/no-derived-state -- external URL change must override the local draft.
+      // external URL change must override the local draft.
       setForm(search);
     }
   }, [search]);
@@ -169,7 +169,7 @@ function SearchPage() {
   // Query off the debounced URL `search` (not the live `form`) so requests fire
   // after the 300ms settle, not on every keystroke.
   const filters: SearchFilterInput = { ...search, limit };
-  // eslint-disable-next-line react-doctor/query-destructure-result -- passed whole to <Results> which needs the full UseQueryResult.
+  // passed whole to <Results> which needs the full UseQueryResult.
   const query = useQuery(searchQuery(filters));
   const results = query.data?.results ?? [];
 

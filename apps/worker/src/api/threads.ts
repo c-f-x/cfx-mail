@@ -1,16 +1,15 @@
-import { contactKey, draft, message, thread, threadFolder, threadSummary } from "@cfmail/db/schema";
+import { contactKey, draft, message, thread, threadFolder } from "@cfmail/db/schema";
 import { Flag } from "@cfmail/shared/flags";
 import { Perm } from "@cfmail/shared/permissions";
-import type { FolderCountsResponseDto, ThreadSummaryDto } from "@cfmail/shared/responses";
-import { markAllRead, updateThread } from "@cfmail/shared/schemas";
-import { zValidator } from "@hono/zod-validator";
+import type { FolderCountsResponseDto, ThreadBodiesDto } from "@cfmail/shared/responses";
+import { markAllRead, threadBodiesQuery, updateThread } from "@cfmail/shared/schemas";
 import { and, asc, count, desc, eq, gt, inArray, or, type SQL, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { dbFromCtx } from "../db.ts";
 import type { AppBindings } from "../env.ts";
 import { broadcastToUsers } from "../hub.ts";
-import { generateThreadSummary } from "../mail/ai.ts";
+import { UNREAD_RECOUNT } from "../lib/unread.ts";
 import { collectThreadBlobKeys, deleteBlobs } from "../mail/blobs.ts";
 import { recomputeThreadUnread } from "../mail/threads.ts";
 import { requireUser } from "../middleware.ts";
@@ -20,8 +19,10 @@ import {
   requireEntityAccess,
   requirePerm,
 } from "../permissions.ts";
-import { cursorBefore, decodeCursor, nextCursor } from "./pagination.ts";
-import { serializeMessage, serializeThread } from "./serialize.ts";
+import { bodiesEtag, etagMatches, REVALIDATE, renderBodies } from "./message-body.ts";
+import { cursorBefore, decodeCursor, nextCursor, pageLimit } from "./pagination.ts";
+import { firstMessageSubject, serializeMessage, serializeThread } from "./serialize.ts";
+import { zValidator } from "./validate.ts";
 
 export function threadsRoutes() {
   const r = new Hono<AppBindings>()
@@ -48,7 +49,7 @@ export function threadsRoutes() {
         scope = eq(thread.mailboxId, mailboxId);
       }
 
-      const limit = Math.min(Number(c.req.query("limit") ?? 50), 200);
+      const limit = pageLimit(c.req.query("limit"));
       const view = c.req.query("view") ?? "inbox";
       const cursor = decodeCursor(c.req.query("cursor"));
       // `unread=1` narrows any view to threads still holding unread inbound mail.
@@ -60,17 +61,27 @@ export function threadsRoutes() {
         unreadOnly ? UNREAD_THREAD : undefined,
         cursorBefore(cursor, thread.lastMsgAt, thread.id),
       );
-      const rows = await db
-        .select()
+      // Keyset order must be deterministic: tie-break equal timestamps on id so
+      // the cursor never straddles or repeats a row across pages.
+      const order = [desc(thread.lastMsgAt), desc(thread.id)];
+      // The page is chosen first, so the subject is looked up for its rows only.
+      const page = db
+        .select({ id: thread.id })
         .from(thread)
         .where(where)
-        // Keyset order must be deterministic: tie-break equal timestamps on id so
-        // the cursor never straddles or repeats a row across pages.
-        .orderBy(desc(thread.lastMsgAt), desc(thread.id))
+        .orderBy(...order)
         .limit(limit);
+      const rows = await db
+        .select({ thread, subject: firstMessageSubject })
+        .from(thread)
+        .where(inArray(thread.id, page))
+        .orderBy(...order);
       return c.json({
-        threads: rows.map(serializeThread),
-        nextCursor: nextCursor(rows, limit, (row) => ({ ts: row.lastMsgAt, id: row.id })),
+        threads: rows.map((row) => serializeThread(row.thread, row.subject)),
+        nextCursor: nextCursor(rows, limit, (row) => ({
+          ts: row.thread.lastMsgAt,
+          id: row.thread.id,
+        })),
       });
     })
 
@@ -227,7 +238,7 @@ export function threadsRoutes() {
       const keyByEmail = new Map(keyRows.map((k) => [k.email, k]));
 
       return c.json({
-        thread: serializeThread(th),
+        thread: serializeThread(th, msgs[0]?.subject ?? null),
         messages: msgs.map((m) => {
           const k = m.direction === "in" ? keyByEmail.get(m.fromAddr.toLowerCase()) : undefined;
           return serializeMessage(
@@ -238,67 +249,38 @@ export function threadsRoutes() {
       });
     })
 
-    // AI catch-up summary of a whole thread (best-effort, on-demand). READ only —
-    // it just condenses messages the caller can already see.
-    .post("/:id/summary", async (c) => {
+    // The rendered bodies of several messages of this thread, in one request.
+    // Each is what GET /api/messages/:id/body serves for it. Ids of other
+    // threads and messages without a stored body are left out.
+    .get("/:id/bodies", zValidator("query", threadBodiesQuery), async (c) => {
       const db = dbFromCtx(c);
       const user = c.get("user")!;
       const id = c.req.param("id");
+      const { ids } = c.req.valid("query");
       const th = await requireEntityAccess(db, user.id, thread, id, Perm.READ);
-
-      const mb = await db.query.mailbox.findFirst({
-        where: (m) => eq(m.id, th.mailboxId),
-        columns: { aiFeatures: true, aiTokenCap: true },
-      });
-      if (!mb?.aiFeatures) throw new HTTPException(403, { message: "AI features are off" });
-
-      // Reuse a cached summary while the thread is unchanged. `msgCount` moves on
-      // any add/remove, so a stale cache is simply ignored and regenerated.
-      const cached = await db.query.threadSummary.findFirst({
-        where: (s) => eq(s.threadId, id),
-      });
-      if (cached && cached.msgCount === th.msgCount) {
-        return c.json({ bullets: cached.bullets } satisfies ThreadSummaryDto);
-      }
-
-      // Cap how many messages feed the model so a long thread can't blow the
-      // budget; keep the most recent ones, oldest-first for chronological context.
       const msgs = await db
-        .select({
-          fromName: message.fromName,
-          fromAddr: message.fromAddr,
-          subject: message.subject,
-          bodyText: message.bodyText,
-        })
+        .select({ id: message.id, plainR2Key: message.plainR2Key, rawR2Key: message.rawR2Key })
         .from(message)
-        .where(and(eq(message.threadId, id), eq(message.mailboxId, th.mailboxId)))
-        .orderBy(desc(message.createdAt))
-        .limit(20);
-      msgs.reverse();
-
-      const bullets = await generateThreadSummary(
-        c.env,
-        db,
-        th.mailboxId,
-        mb.aiTokenCap ?? null,
-        msgs.map((m) => ({
-          from: m.fromName ? `${m.fromName} <${m.fromAddr}>` : m.fromAddr,
-          subject: m.subject,
-          body: m.bodyText ?? "",
-        })),
-      );
-      // Only cache a real result — an empty list means generation failed or the
-      // budget was exhausted, so leave it uncached to retry next time.
-      if (bullets.length > 0) {
-        await db
-          .insert(threadSummary)
-          .values({ threadId: id, bullets, msgCount: th.msgCount, updatedAt: new Date() })
-          .onConflictDoUpdate({
-            target: threadSummary.threadId,
-            set: { bullets, msgCount: th.msgCount, updatedAt: new Date() },
-          });
+        .where(
+          and(
+            eq(message.threadId, id),
+            eq(message.mailboxId, th.mailboxId),
+            inArray(message.id, ids),
+          ),
+        );
+      // Named by the messages actually served, so a cached answer that still
+      // holds a deleted message is not reused.
+      const etag = await bodiesEtag(msgs.map((m) => m.id));
+      if (etagMatches(c.req.header("if-none-match"), etag)) {
+        return c.body(null, 304, { "Cache-Control": REVALIDATE, ETag: etag });
       }
-      return c.json({ bullets } satisfies ThreadSummaryDto);
+      const bodies: ThreadBodiesDto["bodies"] = {};
+      for (const [msgId, result] of await renderBodies(c.env, db, msgs)) {
+        if (result.ok) bodies[msgId] = result.body;
+      }
+      c.header("Cache-Control", REVALIDATE);
+      c.header("ETag", etag);
+      return c.json({ bodies } satisfies ThreadBodiesDto);
     })
 
     .patch("/:id", zValidator("json", updateThread), async (c) => {
@@ -354,18 +336,23 @@ export function threadsRoutes() {
     })
 
     // Permanent delete: drop the thread for good (used by the Trash folder).
-    // Deleting the row cascades to messages/attachments via FKs; R2 blobs have no
-    // cascade, so collect and delete them first.
+    // Only mail already in Trash or Spam can go, so one slip in a normal view
+    // never destroys anything. Deleting the row cascades to messages/attachments
+    // via FKs; R2 blobs have no cascade, so their keys are collected first. The
+    // rows go before the blobs: a leftover blob is harmless, a thread without
+    // its bodies is not.
     .delete("/:id", async (c) => {
       const db = dbFromCtx(c);
       const user = c.get("user")!;
       const id = c.req.param("id");
 
-      await requireEntityAccess(db, user.id, thread, id, Perm.WRITE);
+      const th = await requireEntityAccess(db, user.id, thread, id, Perm.WRITE);
+      if (!th.trashed && !th.spam)
+        throw new HTTPException(409, { message: "Move it to Trash first." });
 
       const keys = await collectThreadBlobKeys(db, [id]);
-      await deleteBlobs(c.env, keys);
       await db.delete(thread).where(eq(thread.id, id));
+      await deleteBlobs(c.env, keys);
 
       return c.json({ deleted: true });
     });
@@ -411,9 +398,8 @@ function viewFilter(view: string, userId: string): SQL | undefined {
 }
 
 // A thread with unread inbound mail (the cached badge already excludes trashed
-// messages), and the recount expression that refreshes that cache in place.
+// messages).
 const UNREAD_THREAD = gt(thread.unreadCount, 0);
-const UNREAD_RECOUNT = sql`(select count(*) from ${message} m where m.thread_id = ${thread.id} and m.direction = 'in' and (m.flags & ${Flag.SEEN}) = 0 and (m.flags & ${Flag.TRASH}) = 0)`;
 
 // Correlated EXISTS over a thread's messages (sent/starred live on rows, not
 // the thread) — lets the sent/marked folders filter by message-level state.

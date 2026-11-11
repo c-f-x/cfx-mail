@@ -1,0 +1,16 @@
+# SHA-256 of each domain a real deployment uses, and of the owner's personal
+# addresses at public mail providers. A hostname under one of these domains,
+# or one of these addresses, fails scripts/wrangler-config.test.mjs even when
+# public-hosts.txt allows the host (decision D-16). The hash keeps the names
+# out of the public tree. It is no secret: a short domain is easy to guess
+# from its hash.
+# Add one with: printf %s <domain or address, lower case> | shasum -a 256
+7765dd33e819f7f8ed673c28dcb302b2c57abcd371c13f98da7ce0a5ff464c62
+58b459be7fe6f22604ef5d275f1df90465684ea98a1ccefee54caf1bac61150f
+0f9b2201535af5723481a72f22f08c7425dfe5908a2e09c090adcd4c203b93bf
+e1eeb944644b642138e9ec21d99b0930e3dfc2e6129f7d550bca2f4f9ebcda4c
+eb9a20cdb1bb186d2f2c6ec3637650f3f2dd62f6ded1a1e025c6086a3c90ba66
+84a0568188f519397fbdde0b93163d1385ca823991e6819dfe373832b81d94fe
+ff135f231b19c839252f2f33fe5d6fbe76c5d8c45e99317b22ef140d9b196767
+424946c4ec8214dbbd1021a11277c643484234d2a634fad561ec023f41e863f1
+5bf7ca7b03080fbbd2f6fb2aeb4f97b397a197471b227244f146edd53232f3c0

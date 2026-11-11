@@ -6,6 +6,7 @@ import type {
   LabelDto,
   MailboxSummaryDto,
   MailView,
+  MessageBodyDto,
   MessageDto,
   MessageLabelDto,
   MeUserDto,
@@ -14,9 +15,11 @@ import type {
   SearchResultDto,
   ThreadDto,
 } from "@cfmail/shared";
-import { MAIL_VIEWS } from "@cfmail/shared/schemas";
+import { MAIL_VIEWS, MAX_BODIES_PER_REQUEST } from "@cfmail/shared/schemas";
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
-import { rpc, unwrap } from "./api.ts";
+import { ApiError, rpc, unwrap } from "./api.ts";
+import { createBodyBatcher } from "./body-batcher.ts";
+import { plainErrorMessage } from "./error-message.ts";
 import { keys } from "./query-keys.ts";
 
 // Response models are owned by `@cfmail/shared` (single source of truth, derived
@@ -63,10 +66,7 @@ export const contactsQuery = queryOptions({
   staleTime: 5 * 60_000,
 });
 
-// Sentinel mailbox id for the combined "All" view — the worker aggregates every
-// mailbox the user can read behind it. Mirrors the backend constant of the same
-// name; real ids are UUIDs so it never collides.
-export const ALL_MAILBOXES = "all";
+export { ALL_MAILBOXES } from "./accounts.ts";
 
 export { MAIL_VIEWS };
 
@@ -154,12 +154,31 @@ export const threadQuery = (threadId: string) =>
     enabled: Boolean(threadId),
   });
 
+// The bodies of a thread's messages, a request per thread and per
+// MAX_BODIES_PER_REQUEST loads made in the same task.
+const loadThreadBody = createBodyBatcher<MessageBodyDto>({
+  fetchMany: async (threadId, ids) =>
+    (
+      await unwrap(
+        rpc.threads[":id"].bodies.$get({ param: { id: threadId }, query: { ids: ids.join(",") } }),
+      )
+    ).bodies,
+  maxIds: MAX_BODIES_PER_REQUEST,
+  // The server leaves out a message it has no body for, where the single-body
+  // route answers 404.
+  missing: () => new ApiError(404, null, plainErrorMessage(404)),
+});
+
 // Full body, parsed on demand from the raw `.eml`. Immutable per message, so it
-// never goes stale once fetched.
-export const messageBodyQuery = (messageId: string) =>
+// never goes stale once fetched. With the thread at hand it is fetched together
+// with the thread's other bodies; the cache entry is the same either way.
+export const messageBodyQuery = (messageId: string, threadId?: string) =>
   queryOptions({
     queryKey: keys.messageBody(messageId),
-    queryFn: () => unwrap(rpc.messages[":id"].body.$get({ param: { id: messageId } })),
+    queryFn: () =>
+      threadId
+        ? loadThreadBody(threadId, messageId)
+        : unwrap(rpc.messages[":id"].body.$get({ param: { id: messageId } })),
     enabled: Boolean(messageId),
     staleTime: Number.POSITIVE_INFINITY,
   });

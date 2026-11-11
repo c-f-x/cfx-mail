@@ -1,4 +1,4 @@
-import { Check, Copy } from "lucide-react";
+import { Check, ChevronRight, Copy } from "lucide-react";
 import type * as React from "react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -178,5 +178,53 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
       {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
       {copied ? "Copied" : label}
     </button>
+  );
+}
+
+/**
+ * A collapsed group for settings of features that are present but not in use
+ * (IMAP, PGP). Closed by default; a link to an id inside opens it.
+ */
+export function Advanced({
+  id,
+  title,
+  description,
+  children,
+  inCard = false,
+}: {
+  id?: string;
+  title: React.ReactNode;
+  description?: React.ReactNode;
+  children: React.ReactNode;
+  /** A region inside a card rather than a group of cards on the page. */
+  inCard?: boolean;
+}) {
+  return (
+    <details id={id} className={cn("group scroll-mt-8", inCard && "border-t first:border-t-0")}>
+      <summary
+        className={cn(
+          "flex cursor-pointer list-none items-start gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/45 [&::-webkit-details-marker]:hidden",
+          inCard ? "px-5 py-4" : "px-0.5 py-1",
+        )}
+      >
+        <ChevronRight
+          aria-hidden
+          className="mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
+        />
+        <span className="min-w-0">
+          {inCard ? (
+            <GroupLabel className="leading-5">{title}</GroupLabel>
+          ) : (
+            <span className="block font-semibold text-[14px] tracking-tight">{title}</span>
+          )}
+          {description && (
+            <span className="mt-0.5 block text-[12px] text-muted-foreground leading-snug">
+              {description}
+            </span>
+          )}
+        </span>
+      </summary>
+      <div className={inCard ? "" : "mt-4 space-y-6"}>{children}</div>
+    </details>
   );
 }

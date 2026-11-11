@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  Advanced,
   CardHeader,
   cardClass,
   fieldClass,
@@ -31,7 +32,7 @@ import { type ImportProgress, runImport } from "@/lib/import.ts";
 import { ALL_MAILBOXES } from "@/lib/queries.ts";
 import { keys } from "@/lib/query-keys.ts";
 
-export type SpamLevel = "off" | "auth" | "standard" | "ai";
+export type SpamLevel = "off" | "auth" | "standard";
 export type PgpMode = "off" | "sign" | "sign_encrypt";
 
 interface MailboxSettings {
@@ -41,11 +42,6 @@ interface MailboxSettings {
   signature: string | null;
   replyTo: string | null;
   spamFilter: SpamLevel;
-  spamAiTokenCap: number | null;
-  spamUsage: { period: string; calls: number; tokens: number } | null;
-  aiFeatures: boolean;
-  aiTokenCap: number | null;
-  aiUsage: { period: string; calls: number; tokens: number } | null;
   // Present on the owner endpoint (/api/mailboxes/:id/settings); the admin
   // settings endpoint doesn't return gateway-PGP state.
   pgpMode?: PgpMode;
@@ -74,7 +70,7 @@ const PGP_MODES: { value: PgpMode; label: string; hint: string }[] = [
 ];
 
 // Same settings document behind two mounts: the admin endpoint additionally
-// accepts the admin-only fields (spam level, budgets).
+// accepts the admin-only fields (spam level).
 function settingsApi(admin: boolean) {
   return admin ? rpc.admin.mailboxes[":id"].settings : rpc.mailboxes[":id"].settings;
 }
@@ -87,12 +83,11 @@ const SPAM_LEVELS: { value: SpamLevel; label: string; hint: string }[] = [
     label: "Standard",
     hint: "Authentication + content heuristics + IP blocklist.",
   },
-  { value: "ai", label: "AI", hint: "Standard plus AI review of uncertain mail." },
 ];
 
 /**
  * Per-mailbox settings form. Identity fields (display name, reply-to, signature)
- * are always editable by anyone with MANAGE; the spam filter level + AI budget are
+ * are always editable by anyone with MANAGE; the spam filter level is
  * admin-only, so they render read-only unless `admin` is set (which also routes
  * reads/writes through the admin endpoint).
  */
@@ -140,7 +135,13 @@ export function MailboxSettingsForm({
             loading={isLoading}
             settingsKey={queryKey}
           />
-          <MailboxPgpCard mailboxId={mailboxId} settingsKey={queryKey} />
+          <Advanced
+            inCard
+            title="Advanced"
+            description="Encryption (PGP). Not in use; open it only if you sign or encrypt mail."
+          >
+            <MailboxPgpCard mailboxId={mailboxId} settingsKey={queryKey} />
+          </Advanced>
         </>
       )}
     </section>
@@ -167,13 +168,6 @@ function MailboxSettingsFields({
   const [replyTo, setReplyTo] = useState(() => settings?.replyTo ?? "");
   const [signature, setSignature] = useState(() => settings?.signature ?? "");
   const [spamFilter, setSpamFilter] = useState<SpamLevel>(() => settings?.spamFilter ?? "standard");
-  const [aiCap, setAiCap] = useState(() =>
-    settings?.spamAiTokenCap ? String(settings.spamAiTokenCap) : "",
-  );
-  const [aiFeatures, setAiFeatures] = useState(() => settings?.aiFeatures ?? false);
-  const [aiFeatureCap, setAiFeatureCap] = useState(() =>
-    settings?.aiTokenCap ? String(settings.aiTokenCap) : "",
-  );
 
   const save = useMutation({
     mutationFn: () =>
@@ -184,14 +178,7 @@ function MailboxSettingsFields({
             displayName: displayName.trim() || null,
             replyTo: replyTo.trim() || null,
             signature: signature.trim() ? signature : null,
-            ...(admin
-              ? {
-                  spamFilter,
-                  spamAiTokenCap: aiCap.trim() ? Number(aiCap) : null,
-                  aiFeatures,
-                  aiTokenCap: aiFeatureCap.trim() ? Number(aiFeatureCap) : null,
-                }
-              : {}),
+            ...(admin ? { spamFilter } : {}),
           },
         }),
       ),
@@ -268,72 +255,6 @@ function MailboxSettingsFields({
               </div>
             </Field>
           )}
-          {admin && spamFilter === "ai" && type !== "service" && (
-            <Field
-              label="AI monthly token budget"
-              hint={
-                settings?.spamUsage
-                  ? `Used ${settings.spamUsage.tokens.toLocaleString()} tokens across ${settings.spamUsage.calls} checks this month (${settings.spamUsage.period}). AI falls back to Standard when the budget is reached.`
-                  : "Leave empty for unlimited. AI runs only on uncertain mail to keep usage low."
-              }
-            >
-              <Input
-                type="number"
-                min={0}
-                value={aiCap}
-                onChange={(e) => setAiCap(e.target.value)}
-                placeholder="Unlimited"
-              />
-            </Field>
-          )}
-          {type !== "service" && admin && (
-            <Field
-              label="AI features"
-              hint="Summarise & categorise inbound mail in the list, plus smart replies and thread summaries. Uses Workers AI."
-            >
-              <Select
-                items={[
-                  { value: "off", label: "Off" },
-                  { value: "on", label: "On" },
-                ]}
-                value={aiFeatures ? "on" : "off"}
-                onValueChange={(v) => setAiFeatures(v === "on")}
-              >
-                <SelectTrigger aria-label="AI features">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="off">Off</SelectItem>
-                  <SelectItem value="on">On</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-          )}
-          {type !== "service" && !admin && (
-            <Field label="AI features" hint="Set by your administrator.">
-              <div className="rounded-md border bg-muted/40 px-2.5 py-1.5 text-[13px] text-muted-foreground">
-                {settings?.aiFeatures ? "On" : "Off"}
-              </div>
-            </Field>
-          )}
-          {admin && aiFeatures && type !== "service" && (
-            <Field
-              label="AI monthly token budget"
-              hint={
-                settings?.aiUsage
-                  ? `Used ${settings.aiUsage.tokens.toLocaleString()} tokens across ${settings.aiUsage.calls} calls this month (${settings.aiUsage.period}). Features pause when the budget is reached; mail still delivers.`
-                  : "Leave empty for unlimited. Summaries run once per inbound message; replies and thread summaries only when requested."
-              }
-            >
-              <Input
-                type="number"
-                min={0}
-                value={aiFeatureCap}
-                onChange={(e) => setAiFeatureCap(e.target.value)}
-                placeholder="Unlimited"
-              />
-            </Field>
-          )}
           <div className="flex justify-end pt-1">
             <Button type="submit" variant="primary" disabled={save.isPending || loading}>
               {save.isPending ? "Saving…" : "Save changes"}
@@ -381,16 +302,16 @@ function MailboxAllMailRegion({
   });
 
   return (
-    <Region label="All Mail">
+    <Region label="All accounts">
       <Row
-        label="Include in All Mail"
-        hint="Off keeps this mailbox out of the combined view, its counts and the unread badge. Opening the mailbox still shows everything."
+        label="Include in All accounts"
+        hint="Off keeps this account out of the combined view, its counts and the unread badge. Opening the account still shows everything."
       >
         <Switch
           checked={!(settings?.excludeFromAll ?? false)}
           disabled={loading || save.isPending}
           onCheckedChange={(v) => save.mutate(v)}
-          aria-label="Include in All Mail"
+          aria-label="Include in All accounts"
         />
       </Row>
     </Region>
@@ -431,14 +352,14 @@ function MailboxPgpCard({ mailboxId, settingsKey }: { mailboxId: string; setting
     qc.invalidateQueries({ queryKey: keys.mailboxes() });
   };
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidates via refreshSettings()
+  // invalidates via refreshSettings()
   const setMode = useMutation({
     mutationFn: (mode: PgpMode) => unwrap(mbx.settings.$patch({ param, json: { pgpMode: mode } })),
     onSuccess: refreshSettings,
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidates via refreshSettings()
+  // invalidates via refreshSettings()
   const generate = useMutation({
     mutationFn: () => unwrap(mbx.pgp.generate.$post({ param })),
     onSuccess: (r) => {
@@ -448,7 +369,7 @@ function MailboxPgpCard({ mailboxId, settingsKey }: { mailboxId: string; setting
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Generate failed"),
   });
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidates via refreshSettings()
+  // invalidates via refreshSettings()
   const doImport = useMutation({
     mutationFn: () =>
       unwrap(
@@ -467,7 +388,7 @@ function MailboxPgpCard({ mailboxId, settingsKey }: { mailboxId: string; setting
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Import failed"),
   });
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidates via refreshSettings()
+  // invalidates via refreshSettings()
   const removeKey = useMutation({
     mutationFn: () => unwrap(mbx.pgp.$delete({ param })),
     onSuccess: () => {
@@ -513,7 +434,7 @@ function MailboxPgpCard({ mailboxId, settingsKey }: { mailboxId: string; setting
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidates via refreshSettings()
+  // invalidates via refreshSettings()
   const setAutoFetch = useMutation({
     mutationFn: (pgpAutoFetch: boolean) =>
       unwrap(mbx.settings.$patch({ param, json: { pgpAutoFetch } })),
@@ -744,7 +665,7 @@ function shortFp(fp: string): string {
 }
 
 /**
- * Bulk-import exported mail (.eml/.mbox/.zip, incl. a Proton Mail export) into a
+ * Bulk-import exported mail (.eml/.mbox/.zip, or a folder of .eml files with metadata) into a
  * chosen mailbox. Extraction runs in the browser; each message is POSTed
  * individually so large archives never hit a Worker body/time limit. Mail is
  * deduped by Message-ID (re-running is safe) and marked read unless an export's
@@ -766,7 +687,7 @@ export function MailboxImportSection({ mailboxes }: { mailboxes: ImportTarget[] 
 
   // `webkitdirectory` has no JSX typing; set it on the DOM node directly. With it
   // the picker selects a whole folder, and the browser reads each message lazily
-  // — so a large Proton export imports without zipping or buffering it all.
+  // — so a large export imports without zipping or buffering it all.
   useEffect(() => {
     if (folderRef.current) folderRef.current.webkitdirectory = true;
   }, []);
@@ -816,7 +737,7 @@ export function MailboxImportSection({ mailboxes }: { mailboxes: ImportTarget[] 
   return (
     <Section
       title="Import mail"
-      description="Upload exported messages — .eml, .mbox, or a .zip. For a large export (e.g. Proton Mail), select its folder instead of zipping it."
+      description="Upload exported messages — .eml, .mbox, or a .zip. For a large export, select its folder instead of zipping it."
       footer={
         <Button
           variant="primary"

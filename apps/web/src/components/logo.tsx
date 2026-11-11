@@ -1,6 +1,6 @@
 import { useId } from "react";
 
-/** App brand mark: orange tile with the Proton-style folded-flap envelope. */
+/** App brand mark: teal tile with a folded-flap envelope. */
 export function Logo({ className }: { className?: string }) {
   const id = useId();
   const bg = `${id}-bg`;
@@ -14,8 +14,8 @@ export function Logo({ className }: { className?: string }) {
     >
       <defs>
         <linearGradient id={bg} x1="256" y1="0" x2="256" y2="512" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#fb923c" />
-          <stop offset="1" stopColor="#f97316" />
+          <stop offset="0" stopColor="#24838b" />
+          <stop offset="1" stopColor="#086a72" />
         </linearGradient>
       </defs>
       <rect width="512" height="512" rx="112" fill={`url(#${bg})`} />

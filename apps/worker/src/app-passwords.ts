@@ -46,9 +46,10 @@ export interface AppPasswordLogin {
 }
 
 // IMAP login: `username` is the mailbox address (or the user's sign-in email),
-// `password` an app password issued for that user+mailbox. Access is
-// re-checked through permissions.ts on every login, so a revoked membership
-// stops working immediately. Throttled per username and per client IP.
+// `password` an app password issued for that user+mailbox. A banned user's
+// passwords never match. Access is re-checked through permissions.ts on every
+// login, so a revoked membership refuses the next login. Throttled per username
+// and per client IP.
 export async function loginWithAppPassword(
   db: DB,
   username: string,
@@ -89,7 +90,13 @@ export async function loginWithAppPassword(
     .innerJoin(domain, eq(domain.id, mailbox.domainId))
     .innerJoin(user, eq(user.id, appPassword.userId))
     .where(
-      or(and(eq(mailbox.localPart, localPart), eq(domain.name, domainName)), eq(user.email, name)),
+      and(
+        eq(user.banned, false),
+        or(
+          and(eq(mailbox.localPart, localPart), eq(domain.name, domainName)),
+          eq(user.email, name),
+        ),
+      ),
     )
     .limit(20);
 

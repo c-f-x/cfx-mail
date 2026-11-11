@@ -8,6 +8,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { MailView, ThreadRow } from "@/lib/queries.ts";
+import { threadSubject } from "@/lib/thread-subject.ts";
 import { Sheet, SheetContent } from "./ui/sheet.tsx";
 
 interface Action {
@@ -79,7 +80,7 @@ export function ThreadActionSheet({
     actions.push({ icon: Trash2, label: "Trash", run: act(onTrash), danger: true });
   }
 
-  const title = thread.subjectNorm || "(no subject)";
+  const title = threadSubject(thread);
   const from = thread.participants[0];
   const sender = from?.name ?? from?.address ?? "";
 

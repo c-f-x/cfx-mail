@@ -1,0 +1,101 @@
+# Hostnames allowed in tracked files. Every other hostname or email domain in
+# a tracked file fails scripts/wrangler-config.test.mjs (decision D-16).
+# A listed domain covers its subdomains. Reserved names (example.com,
+# *.example, *.test, *.invalid, localhost) are always allowed and need no line.
+# Add a line only for a public service the code or docs must name, or for a
+# test fixture. Never add a domain of a real deployment: those live in the
+# private site file.
+
+# The project's own public address (SECURITY.md) and sponsor page (README)
+c-f-x.com
+buymeacoffee.com
+
+# Platform, tools and docs the repository links to
+cloudflare.com
+cloudflare-dns.com
+cloudflare.net
+github.com
+githubusercontent.com
+better-auth.com
+biomejs.dev
+hono.dev
+turborepo.com
+shadcn.com
+w3.org
+betterstack.com
+uptimerobot.com
+linuxfoundation.org
+adobe.com
+
+# Spamhaus blocklists and their test zones (apps/worker/src/dnsbl.ts)
+spamhaus.org
+spamhaus.net
+spamhaus.com
+hbltest.com
+dbltest.com
+
+# Public mail providers (free-mail lists, import formats)
+gmail.com
+googlemail.com
+google.com
+outlook.com
+hotmail.com
+live.com
+msn.com
+yahoo.com
+aol.com
+icloud.com
+me.com
+mac.com
+apple.com
+proton.me
+protonmail.com
+pm.me
+gmx.com
+gmx.net
+mailbox.org
+
+# Public suffixes the address parser knows
+co.uk
+org.uk
+ac.uk
+gov.uk
+
+# Meeting links the invite parser recognises
+microsoft.com
+webex.com
+whereby.com
+gotomeeting.com
+gotomeet.me
+bluejeans.com
+zoomgov.com
+
+# Parcel trackers
+dhl.com
+dhl.de
+fedex.com
+ups.com
+usps.com
+
+# Tracking-pixel hosts the tracker blocker matches
+awstrack.me
+hubapi.com
+createsend1.com
+list-manage.com
+pstmrk.it
+ionos.com
+1und1.de
+
+# Test fixtures and code that looks like a hostname
+a.b.com
+b.com
+bar.com
+d.com
+f.com
+y.com
+y.org
+x.com
+elsewhere.com
+again.me
+first.me
+import.meta.env.dev

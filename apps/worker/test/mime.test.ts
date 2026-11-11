@@ -3,6 +3,7 @@ import type { ParsedEmail } from "../src/mail/mime.ts";
 import {
   addrsToText,
   bodyForIndex,
+  buildMime,
   buildThreadingHeaders,
   extractUnsubscribe,
   htmlToText,
@@ -59,6 +60,17 @@ describe("htmlToText", () => {
 
   it("strips HTML comments", () => {
     expect(htmlToText("<!-- hidden -->visible")).toBe("visible");
+  });
+});
+
+describe("htmlToText — numeric entities", () => {
+  it("does not throw on a code point outside Unicode", () => {
+    // One such entity in an HTML-only mail used to fail its delivery.
+    expect(htmlToText("<p>a&#99999999999;b &#65;</p>")).toBe("a b A");
+  });
+
+  it("does not emit a lone surrogate", () => {
+    expect(htmlToText("x&#55357;y")).toBe("x y");
   });
 });
 
@@ -138,5 +150,19 @@ describe("buildThreadingHeaders", () => {
     expect(buildThreadingHeaders({ messageId: "<a@x>", references: [] })).toEqual({
       "Message-ID": "<a@x>",
     });
+  });
+});
+
+describe("buildMime", () => {
+  it("writes the Reply-To address as a header", () => {
+    const raw = buildMime({
+      messageId: "<a@x>",
+      from: { address: "team@example.com" },
+      to: [{ address: "them@elsewhere.test" }],
+      replyTo: "replies@example.com",
+      subject: "Hi",
+      text: "hello",
+    });
+    expect(raw).toMatch(/^Reply-To: <?replies@example\.com>?\r?$/m);
   });
 });

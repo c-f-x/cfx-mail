@@ -80,7 +80,7 @@ export function TokenField({
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: clicking the field focuses its input
-    <div // react-doctor-disable-line no-static-element-interactions -- gutter click focuses the input; the field is not itself a control
+    <div // gutter click focuses the input; the field is not itself a control
       className={cn(
         "flex w-full flex-wrap items-center gap-1.5 rounded-md border bg-card px-2 py-1.5 text-[13px] shadow-sm outline-none transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/35",
         disabled && "cursor-not-allowed opacity-50",

@@ -1,7 +1,6 @@
 import { domain, domainGrant, mailbox } from "@cfmail/db/schema";
 import { kindBit } from "@cfmail/shared/permissions";
 import { createTempMailbox } from "@cfmail/shared/schemas";
-import { zValidator } from "@hono/zod-validator";
 import { asc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -9,6 +8,7 @@ import { dbFromCtx } from "../db.ts";
 import type { AppBindings } from "../env.ts";
 import { authorizeMailboxCreate } from "../mailbox-access.ts";
 import { requireUser } from "../middleware.ts";
+import { zValidator } from "./validate.ts";
 
 export function tempRoutes() {
   const r = new Hono<AppBindings>()

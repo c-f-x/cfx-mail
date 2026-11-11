@@ -1,10 +1,11 @@
-import { folder, mailbox, message, thread, threadFolder } from "@cfmail/db/schema";
+import { attachment, folder, mailbox, message, thread, threadFolder } from "@cfmail/db/schema";
 import { Flag } from "@cfmail/shared/flags";
 import { Perm } from "@cfmail/shared/permissions";
 import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { threadsRoutes } from "../../src/api/threads.ts";
-import { applyMigrationsOnce, type DB, db, mountApp, request, resetDb } from "../support/app.ts";
+import type { Env } from "../../src/env.ts";
+import { applyMigrationsOnce, type DB, db, e, mountApp, request, resetDb } from "../support/app.ts";
 import {
   grantMember,
   MAILBOX_ID,
@@ -241,6 +242,26 @@ describe("threads list", () => {
     expect(b2.nextCursor).toBeNull();
   });
 
+  it("clamps the page size: limit=-1 is one row, not every row", async () => {
+    await seedMsgThread(db(), { lastMsgAt: new Date(1_000_000) });
+    await seedMsgThread(db(), { lastMsgAt: new Date(2_000_000) });
+    for (const [limit, expected] of [
+      ["-1", 1],
+      ["0", 1],
+      ["abc", 2],
+    ] as const) {
+      // eslint-disable-next-line no-await-in-loop -- independent cases, in order
+      const res = await request(
+        asOwner(),
+        "GET",
+        `/?mailboxId=${MAILBOX_ID}&view=all&limit=${limit}`,
+      );
+      expect(res.status).toBe(200);
+      // eslint-disable-next-line no-await-in-loop
+      expect(((await res.json()) as { threads: unknown[] }).threads).toHaveLength(expected);
+    }
+  });
+
   it("lets a member with READ list", async () => {
     await grantMember(db(), Perm.READ);
     await seedMsgThread(db(), { direction: "in" });
@@ -321,6 +342,58 @@ describe("thread detail", () => {
     expect(body.messages.map((m) => m.id)).toEqual([messageId]);
   });
 
+  it("returns exactly the message fields the reader uses, not stored text or R2 keys", async () => {
+    const { threadId, messageId } = await seedMsgThread(db(), { direction: "in" });
+    await db()
+      .update(message)
+      .set({
+        bodyText: "full plaintext body kept for search only",
+        toText: "recipients kept for search only",
+        rawR2Key: "raw/internal-key.eml",
+        plainR2Key: "plain/internal-key.eml",
+        sizeBytes: 12345,
+        spamScore: 7,
+        listUnsubscribePost: "List-Unsubscribe=One-Click",
+        pgpSignedBy: "ABCDEF",
+        inReplyTo: "<parent@elsewhere.test>",
+      })
+      .where(eq(message.id, messageId));
+    const res = await request(asOwner(), "GET", `/${threadId}`);
+    const body = (await res.json()) as { messages: Record<string, unknown>[] };
+    expect(body.messages).toHaveLength(1);
+    expect(Object.keys(body.messages[0]!).toSorted()).toEqual(
+      [
+        "bccAddrs",
+        "ccAddrs",
+        "createdAt",
+        "deliveredTo",
+        "direction",
+        "flags",
+        "fromAddr",
+        "fromName",
+        "id",
+        "listUnsubscribe",
+        "mailboxId",
+        "messageIdHdr",
+        "pgpEncrypted",
+        "pgpKey",
+        "pgpKeyEvent",
+        "pgpSigned",
+        "pgpVerify",
+        "receivedAt",
+        "references",
+        "sentAt",
+        "snippet",
+        "spamAuth",
+        "spamReasons",
+        "spamVerdict",
+        "subject",
+        "threadId",
+        "toAddrs",
+      ].toSorted(),
+    );
+  });
+
   it("404s a missing thread", async () => {
     const res = await request(asOwner(), "GET", "/nope");
     expect(res.status).toBe(404);
@@ -330,19 +403,6 @@ describe("thread detail", () => {
     const { threadId } = await seedMsgThread(db(), { direction: "in" });
     const res = await request(asOutsider(), "GET", `/${threadId}`);
     expect(res.status).toBe(403);
-  });
-});
-
-describe("thread summary", () => {
-  it("403s when AI features are off for the mailbox", async () => {
-    const { threadId } = await seedMsgThread(db(), { direction: "in" });
-    const res = await request(asOwner(), "POST", `/${threadId}/summary`);
-    expect(res.status).toBe(403);
-  });
-
-  it("404s a missing thread", async () => {
-    const res = await request(asOwner(), "POST", "/nope/summary");
-    expect(res.status).toBe(404);
   });
 });
 
@@ -520,14 +580,87 @@ describe("mark all read", () => {
 });
 
 describe("thread delete", () => {
-  it("permanently deletes a thread", async () => {
-    const { threadId } = await seedMsgThread(db(), { direction: "in" });
+  // A thread whose message has a stored body and one attachment, so a delete
+  // has blobs to take or to leave.
+  async function seedWithBlobs(opts: ThreadOpts = {}) {
+    const ids = await seedMsgThread(db(), opts);
+    const rawKey = `raw/${MAILBOX_ID}/in/${ids.messageId}.eml`;
+    const attKey = `att/${ids.messageId}/a.bin`;
+    await e.BLOBS.put(rawKey, "raw");
+    await e.BLOBS.put(attKey, "bytes");
+    await db().update(message).set({ rawR2Key: rawKey }).where(eq(message.id, ids.messageId));
+    await db()
+      .insert(attachment)
+      .values({
+        id: `att-${ids.messageId}`,
+        messageId: ids.messageId,
+        filename: "a.bin",
+        contentType: "application/octet-stream",
+        sizeBytes: 5,
+        r2Key: attKey,
+      });
+    return { ...ids, keys: [rawKey, attKey] };
+  }
+
+  const threadExists = async (id: string) =>
+    (await db().query.thread.findFirst({ where: eq(thread.id, id), columns: { id: true } })) !==
+    undefined;
+  const blobsPresent = (keys: string[]) =>
+    Promise.all(keys.map(async (key) => (await e.BLOBS.head(key)) !== null));
+
+  it("refuses to delete a thread that is not in Trash or Spam, and keeps its blobs", async () => {
+    const { threadId, keys } = await seedWithBlobs();
+    const res = await request(asOwner(), "DELETE", `/${threadId}`);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "Move it to Trash first." });
+    expect(await threadExists(threadId)).toBe(true);
+    expect(await blobsPresent(keys)).toEqual([true, true]);
+  });
+
+  it("permanently deletes a trashed thread with its blobs", async () => {
+    const { threadId, messageId, keys } = await seedWithBlobs({ trashed: true });
     const res = await request(asOwner(), "DELETE", `/${threadId}`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ deleted: true });
 
-    const after = await request(asOwner(), "GET", `/${threadId}`);
-    expect(after.status).toBe(404);
+    expect((await request(asOwner(), "GET", `/${threadId}`)).status).toBe(404);
+    expect(await db().select().from(message).where(eq(message.id, messageId))).toEqual([]);
+    expect(await blobsPresent(keys)).toEqual([false, false]);
+  });
+
+  it("permanently deletes a thread filed as spam", async () => {
+    const { threadId, keys } = await seedWithBlobs({ spam: true });
+    const res = await request(asOwner(), "DELETE", `/${threadId}`);
+    expect(res.status).toBe(200);
+    expect(await threadExists(threadId)).toBe(false);
+    expect(await blobsPresent(keys)).toEqual([false, false]);
+  });
+
+  it("deletes every selected thread in Trash, as the bulk action does", async () => {
+    const trashed = [
+      await seedWithBlobs({ trashed: true }),
+      await seedWithBlobs({ trashed: true }),
+      await seedWithBlobs({ trashed: true }),
+    ];
+    const kept = await seedWithBlobs();
+    const app = asOwner();
+    const statuses = await Promise.all(
+      trashed.map(async (t) => (await request(app, "DELETE", `/${t.threadId}`)).status),
+    );
+    expect(statuses).toEqual([200, 200, 200]);
+    expect(await db().select({ id: thread.id }).from(thread)).toEqual([{ id: kept.threadId }]);
+    expect(await blobsPresent(trashed.flatMap((t) => t.keys))).toEqual(Array(6).fill(false));
+    expect(await blobsPresent(kept.keys)).toEqual([true, true]);
+  });
+
+  it("removes the rows before the blobs, so a failed blob delete leaves no thread without its bodies", async () => {
+    const { threadId } = await seedWithBlobs({ trashed: true });
+    const failing = {
+      ...e,
+      BLOBS: { delete: () => Promise.reject(new Error("r2 down")) },
+    } as unknown as Env;
+    await asOwner().request(`/${threadId}`, { method: "DELETE" }, failing);
+    expect(await threadExists(threadId)).toBe(false);
   });
 
   it("404s deleting a missing thread", async () => {
@@ -540,5 +673,21 @@ describe("thread delete", () => {
     const { threadId } = await seedMsgThread(db(), { direction: "in" });
     const res = await request(asMember(), "DELETE", `/${threadId}`);
     expect(res.status).toBe(403);
+  });
+
+  it("forbids a member without WRITE from deleting a trashed thread (403)", async () => {
+    await grantMember(db(), Perm.READ);
+    const { threadId, keys } = await seedWithBlobs({ trashed: true });
+    const res = await request(asMember(), "DELETE", `/${threadId}`);
+    expect(res.status).toBe(403);
+    expect(await threadExists(threadId)).toBe(true);
+    expect(await blobsPresent(keys)).toEqual([true, true]);
+  });
+
+  it("lets a member with WRITE delete a trashed thread", async () => {
+    await grantMember(db(), Perm.READ | Perm.WRITE);
+    const { threadId } = await seedWithBlobs({ trashed: true });
+    expect((await request(asMember(), "DELETE", `/${threadId}`)).status).toBe(200);
+    expect(await threadExists(threadId)).toBe(false);
   });
 });

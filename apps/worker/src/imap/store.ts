@@ -16,21 +16,14 @@
 
 import type { DB } from "@cfmail/db";
 import type { ImapFolderKind } from "@cfmail/db/enums";
-import {
-  domain,
-  folder,
-  imapFolder,
-  imapUid,
-  mailbox,
-  message,
-  thread,
-  threadFolder,
-} from "@cfmail/db/schema";
+import { folder, imapFolder, imapUid, message, thread, threadFolder } from "@cfmail/db/schema";
 import { Flag, has, Perm } from "@cfmail/shared";
 import { and, asc, eq, inArray, isNotNull, or, type SQL, sql } from "drizzle-orm";
 import type { Env } from "../env.ts";
 import { AppError, wrapUnique } from "../errors.ts";
 import { broadcastToUsers } from "../hub.ts";
+import { chunk } from "../lib/sql.ts";
+import { UNREAD_RECOUNT } from "../lib/unread.ts";
 import { collectMessageBlobKeys, deleteBlobs } from "../mail/blobs.ts";
 import { ingestRaw } from "../mail/ingest.ts";
 import { parseMime } from "../mail/mime.ts";
@@ -148,11 +141,6 @@ const ACTIVE = and(eq(thread.trashed, false), eq(thread.spam, false))!;
 
 // D1 caps bound parameters per statement; keep every IN list under it.
 const CHUNK = 90;
-function chunk<T>(arr: T[], size = CHUNK): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
 
 export class ImapStore {
   constructor(
@@ -376,7 +364,7 @@ export class ImapStore {
     const gone = mapped.filter((r) => !present.has(r.messageId)).map((r) => r.uid);
     if (gone.length) {
       await Promise.all(
-        chunk(gone).map((part) =>
+        chunk(gone, CHUNK).map((part) =>
           this.db
             .delete(imapUid)
             .where(and(eq(imapUid.imapFolderId, state.id), inArray(imapUid.uid, part))),
@@ -481,7 +469,7 @@ export class ImapStore {
       apply = (f) => (f & ~IMAP_BITS) | bits;
     }
     await Promise.all(
-      chunk(ids).map((part) =>
+      chunk(ids, CHUNK).map((part) =>
         this.db
           .update(message)
           .set({ flags: expr })
@@ -502,13 +490,8 @@ export class ImapStore {
 
   private async recomputeUnread(threadIds: string[]): Promise<void> {
     await Promise.all(
-      chunk(threadIds).map((part) =>
-        this.db
-          .update(thread)
-          .set({
-            unreadCount: sql`(select count(*) from ${message} m where m.thread_id = ${thread.id} and m.direction = 'in' and (m.flags & ${Flag.SEEN}) = 0 and (m.flags & ${Flag.TRASH}) = 0)`,
-          })
-          .where(inArray(thread.id, part)),
+      chunk(threadIds, CHUNK).map((part) =>
+        this.db.update(thread).set({ unreadCount: UNREAD_RECOUNT }).where(inArray(thread.id, part)),
       ),
     );
   }
@@ -528,7 +511,7 @@ export class ImapStore {
     }
     const threadIds = [...byThread.keys()];
     const liveCounts = new Map<string, number>();
-    for (const part of chunk(threadIds)) {
+    for (const part of chunk(threadIds, CHUNK)) {
       const rows = await this.db
         .select({ threadId: message.threadId, c: sql<number>`count(*)` })
         .from(message)
@@ -545,19 +528,22 @@ export class ImapStore {
     }
     const now = new Date();
     await Promise.all([
-      ...chunk(wholeThreads).map((part) =>
+      ...chunk(wholeThreads, CHUNK).map((part) =>
         this.db
           .update(thread)
           .set({ trashed: true, trashedAt: now, spam: false })
           .where(inArray(thread.id, part)),
       ),
-      ...chunk(flagOnly).map((part) =>
+      ...chunk(flagOnly, CHUNK).map((part) =>
         this.db
           .update(message)
           .set({ flags: sql`(${message.flags} | ${Flag.TRASH}) & ${~Flag.DELETED}` })
           .where(inArray(message.id, part)),
       ),
-      ...chunk(entries.map((e) => e.msg.id)).map((part) =>
+      ...chunk(
+        entries.map((e) => e.msg.id),
+        CHUNK,
+      ).map((part) =>
         this.db
           .update(message)
           .set({ flags: sql`${message.flags} & ${~Flag.DELETED}` })
@@ -573,13 +559,13 @@ export class ImapStore {
     const ids = entries.map((e) => e.msg.id);
     const threadIds = [...new Set(entries.map((e) => e.msg.threadId))];
     await Promise.all([
-      ...chunk(ids).map((part) =>
+      ...chunk(ids, CHUNK).map((part) =>
         this.db
           .update(message)
           .set({ flags: sql`${message.flags} & ${~(Flag.TRASH | Flag.DELETED)}` })
           .where(inArray(message.id, part)),
       ),
-      ...chunk(threadIds).map((part) =>
+      ...chunk(threadIds, CHUNK).map((part) =>
         this.db
           .update(thread)
           .set({ trashed: false, trashedAt: null, spam: false })
@@ -587,7 +573,7 @@ export class ImapStore {
             and(inArray(thread.id, part), or(eq(thread.trashed, true), eq(thread.spam, true))),
           ),
       ),
-      ...chunk(threadIds).map((part) =>
+      ...chunk(threadIds, CHUNK).map((part) =>
         this.db
           .delete(threadFolder)
           .where(
@@ -609,13 +595,16 @@ export class ImapStore {
       case "spam": {
         this.requireWrite();
         await Promise.all([
-          ...chunk(threadIds).map((part) =>
+          ...chunk(threadIds, CHUNK).map((part) =>
             this.db
               .update(thread)
               .set({ spam: true, trashed: false, trashedAt: null })
               .where(inArray(thread.id, part)),
           ),
-          ...chunk(entries.map((e) => e.msg.id)).map((part) =>
+          ...chunk(
+            entries.map((e) => e.msg.id),
+            CHUNK,
+          ).map((part) =>
             this.db
               .update(message)
               .set({ flags: sql`${message.flags} & ${~(Flag.TRASH | Flag.DELETED)}` })
@@ -681,9 +670,10 @@ export class ImapStore {
       await deleteBlobs(this.env, keys);
     }
     await Promise.all(
-      chunk(entries.map((e) => e.msg.id)).map((part) =>
-        this.db.delete(message).where(inArray(message.id, part)),
-      ),
+      chunk(
+        entries.map((e) => e.msg.id),
+        CHUNK,
+      ).map((part) => this.db.delete(message).where(inArray(message.id, part))),
     );
     for (const threadId of threadIds) {
       const left = await this.db
@@ -775,16 +765,4 @@ export class ImapStore {
       mailboxId: this.account.mailboxId,
     });
   }
-}
-
-// Resolve a mailbox's full address for the account object / APPEND direction.
-export async function mailboxAddress(db: DB, mailboxId: string): Promise<string | null> {
-  const rows = await db
-    .select({ localPart: mailbox.localPart, domainName: domain.name })
-    .from(mailbox)
-    .innerJoin(domain, eq(domain.id, mailbox.domainId))
-    .where(eq(mailbox.id, mailboxId))
-    .limit(1);
-  const r = rows[0];
-  return r ? `${r.localPart}@${r.domainName}` : null;
 }

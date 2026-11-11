@@ -1,8 +1,20 @@
 import { type DB, makeDB } from "@cfmail/db";
-import { domain, draft, mailbox, rateLimitCounter, reminder, thread } from "@cfmail/db/schema";
-import { and, asc, eq, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
+import {
+  domain,
+  draft,
+  mailbox,
+  rateLimitCounter,
+  reminder,
+  thread,
+  user,
+} from "@cfmail/db/schema";
+import { Perm } from "@cfmail/shared/permissions";
+import { and, asc, eq, isNotNull, isNull, lt, lte, notExists, or, sql } from "drizzle-orm";
+import { BAN_REASON_PENDING_DELETE } from "./auth.ts";
 import type { Env } from "./env.ts";
+import { AppError } from "./errors.ts";
 import { broadcastToUsers } from "./hub.ts";
+import { isOwnDraftUpload } from "./mail/blob-keys.ts";
 import { collectThreadBlobKeys, deleteBlobs, deleteThreadsByIds } from "./mail/blobs.ts";
 import { checkDomainHealth } from "./mail/dns.ts";
 import { pushToUsers } from "./mail/push.ts";
@@ -10,6 +22,8 @@ import { buildQuote } from "./mail/quote.ts";
 import { sendFromMailbox } from "./mail/send.ts";
 import { refreshTrackerList } from "./mail/trackers.ts";
 import { markMailboxPurge } from "./mailbox-purge.ts";
+import { requirePerm } from "./permissions.ts";
+import { enforceSendLimit } from "./rate-limit.ts";
 
 const DNS_RECHECK_INTERVAL_MS = 60 * 60 * 1000;
 const DNS_BATCH_LIMIT = 10;
@@ -39,9 +53,14 @@ const REMINDER_LIMIT = 100;
 // A failing scheduled send is retried on subsequent ticks up to this many times
 // before it's marked failed.
 const SCHEDULED_SEND_MAX_ATTEMPTS = 3;
+// How long a tick holds a draft it has claimed. A tick that dies mid-send
+// leaves the draft to be retried once this has passed.
+const SCHEDULED_SEND_LEASE_MS = 10 * 60 * 1000;
+// How far a send is pushed back when its author is over the hourly limit.
+const SCHEDULED_SEND_DEFER_MS = 5 * 60 * 1000;
 
 // Each top-level cron job is isolated: one throwing must not silently skip the
-// rest of the tick (the whole run sits under a single waitUntil).
+// rest of the tick.
 async function step(name: string, fn: () => Promise<void>): Promise<void> {
   try {
     await fn();
@@ -59,9 +78,26 @@ export async function runCron(env: Env, now: Date): Promise<void> {
   await step("purge-trash", () => purgeStaleTrash(env, db, now));
   await step("purge-service-retention", () => purgeStaleServiceThreads(env, db, now));
   await step("purge-pending-mailboxes", () => purgePendingMailboxes(env, db));
+  await step("delete-purged-users", () => deletePurgedUsers(db));
   await step("prune-rate-limit-counters", () => pruneRateLimitCounters(db, now));
   await step("dns-recheck", () => recheckDomains(db, now));
   await step("tracker-list", () => refreshTrackerList(db, now));
+}
+
+// Finish deleting users an admin removed (DELETE /api/users/:id). Their
+// mailboxes were marked for purge in that request; the user row goes only when
+// none is left, so its cascade has no mail to take with it.
+async function deletePurgedUsers(db: DB): Promise<void> {
+  await db
+    .delete(user)
+    .where(
+      and(
+        eq(user.banReason, BAN_REASON_PENDING_DELETE),
+        notExists(
+          db.select({ id: mailbox.id }).from(mailbox).where(eq(mailbox.ownerUserId, user.id)),
+        ),
+      ),
+    );
 }
 
 // Expired temp mailboxes go through the same background purge as admin/owner
@@ -164,24 +200,44 @@ async function recheckDomains(db: DB, now: Date): Promise<void> {
 // cascade), then the threads (which cascade to messages/attachments). When a
 // mailbox is fully drained it's finalized: an "empty" clears the flag, a
 // "delete" drops the row. The remaining mailboxes carry over to the next tick.
+// A "delete" takes every thread: the address stopped receiving the moment it
+// was requested. An "empty" mailbox still receives, so its drain takes only
+// threads last active before the request and keeps later mail whole. Thread
+// times are whole seconds, and a thread active in the very second of the
+// request is kept: leaving one behind is better than destroying accepted mail.
 // Awaits here are intentionally sequential: each batch is bounded by a shared
 // per-tick budget and a batch must commit before the next select runs.
 /* eslint-disable no-await-in-loop */
 async function purgePendingMailboxes(env: Env, db: DB): Promise<void> {
   const pending = await db
-    .select({ id: mailbox.id, pendingPurge: mailbox.pendingPurge })
+    .select({
+      id: mailbox.id,
+      pendingPurge: mailbox.pendingPurge,
+      purgeStartedAt: mailbox.purgeStartedAt,
+    })
     .from(mailbox)
     .where(isNotNull(mailbox.pendingPurge))
     .limit(MAILBOX_PURGE_MAILBOXES);
 
   let budget = MAILBOX_PURGE_THREADS_PER_TICK;
   for (const mb of pending) {
+    let doomed = eq(thread.mailboxId, mb.id);
+    if (mb.pendingPurge === "empty") {
+      // A row flagged before the start time existed: the purge starts now, and
+      // the time is stored so later ticks drain against the same line.
+      const startedAt = mb.purgeStartedAt ?? new Date();
+      if (!mb.purgeStartedAt) {
+        await db.update(mailbox).set({ purgeStartedAt: startedAt }).where(eq(mailbox.id, mb.id));
+      }
+      doomed = and(doomed, lt(thread.lastMsgAt, startedAt))!;
+    }
+
     let emptied = false;
     while (budget > 0) {
       const batch = await db
         .select({ id: thread.id })
         .from(thread)
-        .where(eq(thread.mailboxId, mb.id))
+        .where(doomed)
         .limit(MAILBOX_PURGE_THREAD_BATCH);
       if (!batch.length) {
         emptied = true;
@@ -199,11 +255,15 @@ async function purgePendingMailboxes(env: Env, db: DB): Promise<void> {
     // next tick (it still has threads).
     if (!emptied) break;
 
-    // Fully drained: an "empty" clears the flag, a "delete" drops the row.
+    // Fully drained: an "empty" clears the flag, a "delete" drops the row. A
+    // delete requested while the empty drained must keep its flag.
     if (mb.pendingPurge === "delete") {
       await db.delete(mailbox).where(eq(mailbox.id, mb.id));
     } else {
-      await db.update(mailbox).set({ pendingPurge: null }).where(eq(mailbox.id, mb.id));
+      await db
+        .update(mailbox)
+        .set({ pendingPurge: null, purgeStartedAt: null })
+        .where(and(eq(mailbox.id, mb.id), eq(mailbox.pendingPurge, "empty")));
     }
   }
 }
@@ -254,68 +314,142 @@ async function dispatchReminders(env: Env, db: DB, now: Date): Promise<void> {
 // the normal outbound path with its stored payload, then the draft is deleted.
 // A send that throws is retried on later ticks; after a few failures the row is
 // reverted to an editable draft, flagged with the error, and the author warned.
+//
+// Each draft is claimed before it is sent: one UPDATE moves `scheduledFor` a
+// lease ahead and counts the attempt, and only the tick whose UPDATE returns
+// the row sends. Overlapping ticks therefore send once, and a tick that dies
+// mid-send is retried when its lease runs out.
 async function dispatchScheduledSends(env: Env, db: DB, now: Date): Promise<void> {
   const due = await db
-    .select()
+    .select({ id: draft.id })
     .from(draft)
     .where(and(isNotNull(draft.scheduledFor), lte(draft.scheduledFor, now)))
     .orderBy(asc(draft.scheduledFor))
     .limit(SCHEDULED_SEND_LIMIT);
 
   await Promise.all(
-    due.map(async (row) => {
+    due.map(async ({ id }) => {
+      const [row] = await db
+        .update(draft)
+        .set({
+          scheduledFor: new Date(now.getTime() + SCHEDULED_SEND_LEASE_MS),
+          scheduledAttempts: sql`${draft.scheduledAttempts} + 1`,
+        })
+        .where(and(eq(draft.id, id), isNotNull(draft.scheduledFor), lte(draft.scheduledFor, now)))
+        .returning();
+      if (!row) return;
+
       const payload = row.scheduledPayload;
       // A scheduled row without a payload is corrupt — unschedule it rather than
       // loop on it every tick.
       if (!payload) {
-        await db.update(draft).set({ scheduledFor: null }).where(eq(draft.id, row.id));
+        await db.update(draft).set({ scheduledFor: null }).where(eq(draft.id, id));
         return;
       }
-      try {
-        const quote = payload.quote
-          ? await buildQuote(env, db, row.userId, payload.quote)
-          : undefined;
-        await sendFromMailbox(env, db, row.userId, payload, quote);
 
-        // The send consumed the temp upload blobs (they live in the new .eml);
-        // drop them and the draft, mirroring the post-send cleanup of the UI.
-        const prefix = `draft/${row.userId}/`;
-        await Promise.all(
-          (payload.attachments ?? [])
-            .filter((a) => a.r2Key.startsWith(prefix))
-            .map((a) => env.BLOBS.delete(a.r2Key)),
-        );
-        await db.delete(draft).where(eq(draft.id, row.id));
-      } catch (err) {
-        const detail = err instanceof Error ? err.message : String(err);
-        const attempts = row.scheduledAttempts + 1;
-        console.error(
-          `scheduled send failed for draft ${row.id} (attempt ${attempts}/${SCHEDULED_SEND_MAX_ATTEMPTS})`,
-          err,
-        );
-        if (attempts < SCHEDULED_SEND_MAX_ATTEMPTS) {
-          // Bump the counter but leave `scheduledFor` in the past so the next
-          // tick retries it.
-          await db.update(draft).set({ scheduledAttempts: attempts }).where(eq(draft.id, row.id));
-          return;
-        }
-        // Out of retries — revert to an editable draft, flag the failure, warn.
+      // Revert to an editable draft, flag the failure, warn the author.
+      const giveBack = async (detail: string): Promise<void> => {
         await db
           .update(draft)
           .set({
             scheduledFor: null,
             scheduledPayload: null,
-            scheduledAttempts: attempts,
             scheduledError: detail,
             updatedAt: now,
           })
-          .where(eq(draft.id, row.id));
+          .where(eq(draft.id, id));
         await broadcastToUsers(env, [row.userId], {
           type: "scheduled_send_failed",
           mailboxId: row.mailboxId,
-          draftId: row.id,
+          draftId: id,
           error: detail,
         });
+      };
+      // Still claimed by this tick: the author has not cancelled in the meantime.
+      const stillScheduled = and(eq(draft.id, id), isNotNull(draft.scheduledFor));
+
+      let stage: "permission" | "limit" | "send" = "permission";
+      try {
+        // The author passed these checks when scheduling. All can have changed
+        // since, so the send path repeats them. A ban is checked here because
+        // nothing else stops a banned user's queued mail: the request path
+        // relies on their sessions being gone, and the cron has no session.
+        const author = await db.query.user.findFirst({
+          where: eq(user.id, row.userId),
+          columns: { banned: true },
+        });
+        if (!author || author.banned) throw new AppError("forbidden", "forbidden");
+        await requirePerm(db, row.userId, row.mailboxId, Perm.WRITE);
+        stage = "limit";
+        await enforceSendLimit(db, row.userId);
+        stage = "send";
+        const quote = payload.quote
+          ? await buildQuote(env, db, row.userId, payload.quote)
+          : undefined;
+        await sendFromMailbox(env, db, row.userId, payload, quote);
+      } catch (err) {
+        if (stage === "permission" && err instanceof AppError && err.code === "forbidden") {
+          await giveBack("You no longer have access to send from this mailbox.");
+          return;
+        }
+        if (stage === "limit" && err instanceof AppError && err.code === "rate_limited") {
+          // Over the hourly limit is a wait, not a failure: try again shortly
+          // and give the attempt back.
+          await db
+            .update(draft)
+            .set({
+              scheduledFor: new Date(now.getTime() + SCHEDULED_SEND_DEFER_MS),
+              scheduledAttempts: row.scheduledAttempts - 1,
+            })
+            .where(stillScheduled);
+          return;
+        }
+        const detail = err instanceof Error ? err.message : String(err);
+        console.error(
+          `scheduled send failed for draft ${id} (attempt ${row.scheduledAttempts}/${SCHEDULED_SEND_MAX_ATTEMPTS})`,
+          err,
+        );
+        if (row.scheduledAttempts < SCHEDULED_SEND_MAX_ATTEMPTS) {
+          // End the lease so the next tick retries it.
+          await db.update(draft).set({ scheduledFor: now }).where(stillScheduled);
+          return;
+        }
+        // Out of retries.
+        await giveBack(detail);
+        return;
+      }
+
+      // The mail has left. Nothing below may put the draft back in line.
+      try {
+        await db.delete(draft).where(eq(draft.id, id));
+      } catch (err) {
+        console.error("scheduled_send_cleanup_failed", { draftId: id, step: "draft" }, err);
+        // Take it out of line, or the next tick would send it again once the
+        // lease runs out. It stays as a plain draft.
+        try {
+          await db
+            .update(draft)
+            .set({ scheduledFor: null, scheduledPayload: null, updatedAt: now })
+            .where(eq(draft.id, id));
+        } catch (unscheduleErr) {
+          console.error(
+            "scheduled_send_cleanup_failed",
+            { draftId: id, step: "unschedule" },
+            unscheduleErr,
+          );
+        }
+        return;
+      }
+      // The send copied the temp upload blobs into the new .eml; drop them,
+      // mirroring the post-send cleanup of the UI.
+      try {
+        await Promise.all(
+          (payload.attachments ?? [])
+            .filter((a) => isOwnDraftUpload(row.userId, a.r2Key))
+            .map((a) => env.BLOBS.delete(a.r2Key)),
+        );
+      } catch (err) {
+        console.error("scheduled_send_cleanup_failed", { draftId: id, step: "blobs" }, err);
       }
     }),
   );

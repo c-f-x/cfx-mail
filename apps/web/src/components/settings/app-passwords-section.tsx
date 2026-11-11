@@ -52,7 +52,7 @@ export function AppPasswordsSection({ mailboxes }: { mailboxes: MailboxSummary[]
     onSuccess: (res) => {
       setCreated(res);
       setName("");
-      invalidate();
+      void invalidate();
     },
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
@@ -60,7 +60,7 @@ export function AppPasswordsSection({ mailboxes }: { mailboxes: MailboxSummary[]
   const remove = useMutation({
     mutationFn: (id: string) => unwrap(rpc["app-passwords"][":id"].$delete({ param: { id } })),
     onSuccess: () => {
-      invalidate();
+      void invalidate();
       toast.success("App password revoked");
     },
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
@@ -78,7 +78,7 @@ export function AppPasswordsSection({ mailboxes }: { mailboxes: MailboxSummary[]
     <Section
       id="imap"
       title="IMAP access"
-      description="Read this mailbox from Apple Mail, Thunderbird, Outlook or any other mail app. Each app password unlocks one mailbox and can be revoked here at any time."
+      description="Read this mailbox from any mail app. Each app password unlocks one mailbox and can be revoked here at any time."
     >
       <div className="rounded-md border bg-muted/40 p-3 text-[12px]">
         <GroupLabel className="mb-2">Server settings</GroupLabel>
@@ -123,7 +123,7 @@ export function AppPasswordsSection({ mailboxes }: { mailboxes: MailboxSummary[]
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && name.trim() && create.mutate()}
-            placeholder="Device or app name (e.g. iPhone)"
+            placeholder="Device or app name (e.g. work laptop)"
             maxLength={64}
             className="flex-1"
           />

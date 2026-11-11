@@ -178,10 +178,9 @@ describe("admin mailbox settings", () => {
   it("returns full settings for a mailbox", async () => {
     const res = await request(asAdmin(), "GET", `/mailboxes/${MAILBOX_ID}/settings`);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { id: string; spamFilter: string; spamUsage: unknown };
+    const body = (await res.json()) as { id: string; spamFilter: string };
     expect(body.id).toBe(MAILBOX_ID);
     expect(body.spamFilter).toBe("standard");
-    expect(body.spamUsage).toBeNull();
   });
 
   it("404s settings for an unknown mailbox", async () => {
@@ -192,12 +191,12 @@ describe("admin mailbox settings", () => {
   it("patches the spam filter and display name", async () => {
     const res = await request(asAdmin(), "PATCH", `/mailboxes/${MAILBOX_ID}/settings`, {
       displayName: "  Team  ",
-      spamFilter: "ai",
+      spamFilter: "auth",
     });
     expect(res.status).toBe(200);
     const row = await db().query.mailbox.findFirst({ where: eq(mailbox.id, MAILBOX_ID) });
     expect(row?.displayName).toBe("Team");
-    expect(row?.spamFilter).toBe("ai");
+    expect(row?.spamFilter).toBe("auth");
   });
 
   it("400s an invalid settings body", async () => {
@@ -209,7 +208,7 @@ describe("admin mailbox settings", () => {
 
   it("404s settings patch for an unknown mailbox", async () => {
     const res = await request(asAdmin(), "PATCH", "/mailboxes/ghost/settings", {
-      spamFilter: "ai",
+      spamFilter: "auth",
     });
     expect(res.status).toBe(404);
   });
@@ -283,6 +282,19 @@ describe("admin service mailboxes", () => {
     });
   });
 
+  it("trims a sender name given when creating a service mailbox", async () => {
+    await allowAllKinds();
+    const res = await request(asAdmin(), "POST", "/service", {
+      domainId: DOMAIN_ID,
+      localPart: "noreply",
+      displayName: "  Acme  ",
+    });
+    const { id } = (await res.json()) as { id: string };
+    expect((await db().query.mailbox.findFirst({ where: eq(mailbox.id, id) }))?.displayName).toBe(
+      "Acme",
+    );
+  });
+
   it("creates a service mailbox and returns the key once", async () => {
     await allowAllKinds();
     const res = await request(asAdmin(), "POST", "/service", {
@@ -330,6 +342,18 @@ describe("admin service mailboxes", () => {
     const row = await db().query.mailbox.findFirst({ where: eq(mailbox.id, SERVICE_ID) });
     expect(row?.displayName).toBe("Service");
     expect(row?.serviceMode).toBe("send");
+  });
+
+  // A sender name is trimmed, and an empty one means no name, as for any mailbox.
+  it("trims a service mailbox's sender name, and clears it when empty", async () => {
+    await seedService();
+    await request(asAdmin(), "PATCH", `/service/${SERVICE_ID}`, { displayName: "  Acme  " });
+    const named = await db().query.mailbox.findFirst({ where: eq(mailbox.id, SERVICE_ID) });
+    expect(named?.displayName).toBe("Acme");
+
+    await request(asAdmin(), "PATCH", `/service/${SERVICE_ID}`, { displayName: "   " });
+    const cleared = await db().query.mailbox.findFirst({ where: eq(mailbox.id, SERVICE_ID) });
+    expect(cleared?.displayName).toBeNull();
   });
 
   it("404s patching an unknown service mailbox", async () => {

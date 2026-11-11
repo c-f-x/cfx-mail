@@ -49,16 +49,41 @@ describe("lookupIp", () => {
 
   it("returns null for an unlisted address, an error code and IPv6", async () => {
     stubDoh({ "1.0.0.127/zen": [], "9.9.9.9/zen": ["127.255.255.254"] });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     expect(await lookupIp(KEY, "127.0.0.1")).toBeNull();
+    expect(errors).not.toHaveBeenCalled();
     expect(await lookupIp(KEY, "9.9.9.9")).toBeNull();
+    // An error code is logged, since it means every lookup is silently degraded.
+    expect(errors.mock.calls).toEqual([
+      ["spamhaus dqs: Spamhaus returned an error (127.255.255.254)"],
+    ]);
     expect(await lookupIp(KEY, "2001:db8::1")).toBeNull();
+    errors.mockRestore();
   });
 
   it("survives a DNS failure", async () => {
     vi.stubGlobal("fetch", async () => {
       throw new Error("network down");
     });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     expect(await lookupIp(KEY, "1.2.3.4")).toBeNull();
+    errors.mockRestore();
+  });
+
+  // Every failed lookup reads "not listed", so a resolver outage turns the
+  // whole filter off. The log is the only trace of that.
+  it("logs a failed lookup without the queried name or the key", async () => {
+    vi.stubGlobal("fetch", async (input: string | URL) => {
+      throw new Error(`connect failed for ${new URL(String(input)).searchParams.get("name")}`);
+    });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await lookupIp(KEY, "1.2.3.4");
+
+    expect(errors.mock.calls).toEqual([
+      ["spamhaus_dqs_lookup_failed", { zone: "zen", error: "connect failed for <query>" }],
+    ]);
+    errors.mockRestore();
   });
 });
 

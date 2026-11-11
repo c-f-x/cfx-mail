@@ -6,6 +6,7 @@ import {
   grantMember,
   MAILBOX_ID,
   member,
+  OTHER_MAILBOX_ID,
   outsider,
   owner,
   seedBase,
@@ -113,5 +114,26 @@ describe("reminders", () => {
     const { id } = await create(asOwner(), threadId);
     expect((await request(asOwner(), "DELETE", `/${id}`)).status).toBe(204);
     expect((await request(asOwner(), "DELETE", `/${id}`)).status).toBe(404);
+  });
+
+  it("does not copy the subject of a thread the caller cannot read", async () => {
+    // The member reads OTHER_MAILBOX only; the thread lives in MAILBOX_ID.
+    await grantMember(db(), Perm.READ, OTHER_MAILBOX_ID);
+    const { threadId } = await seedThread(db());
+    const res = await request(mountApp(remindersRoutes, member), "POST", "/", {
+      mailboxId: OTHER_MAILBOX_ID,
+      threadId,
+      remindAt: future(),
+    });
+    expect(res.status).toBe(403);
+    expect(await db().query.reminder.findMany()).toHaveLength(0);
+  });
+
+  it("404s a thread that is not in the given mailbox, and an unknown thread", async () => {
+    const { threadId } = await seedThread(db());
+    const mismatch = await create(asOwner(), threadId, { mailboxId: OTHER_MAILBOX_ID });
+    expect(mismatch.status).toBe(404);
+    expect((await create(asOwner(), "no-such-thread")).status).toBe(404);
+    expect(await db().query.reminder.findMany()).toHaveLength(0);
   });
 });

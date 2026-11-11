@@ -1,16 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { Folder as FolderIcon, FolderInput, Mail, MailOpen } from "lucide-react";
 import { type CSSProperties, useRef } from "react";
+import { accountLine } from "@/lib/accounts.ts";
 import { rpc, unwrap } from "@/lib/api.ts";
 import {
   type FolderRow,
   type MessageLabel,
+  mailboxesQuery,
   type ThreadRow,
   threadLabelsQuery,
 } from "@/lib/queries.ts";
 import { useThreadListMutation } from "@/lib/thread-mutations.ts";
 import { useUnfileThread } from "@/lib/use-folder-mutations.ts";
-import { useListVirtualizer, visibleBlock } from "@/lib/use-list-virtualizer.ts";
+import { rowStyle, useListVirtualizer, visibleBlock } from "@/lib/use-list-virtualizer.ts";
+import { ListHeader } from "./list-header.tsx";
 import {
   FolderSubmenu,
   LabelsSubmenu,
@@ -21,13 +24,15 @@ import {
 import { ThreadRowView } from "./thread-row.tsx";
 import { IconButton } from "./ui/icon-button.tsx";
 import { TooltipProvider } from "./ui/tooltip.tsx";
-import { EmptyState, ThreadListSkeleton } from "./ui.tsx";
+import { EmptyState, LoadError, ThreadListSkeleton } from "./ui.tsx";
 
 interface Props {
   folder?: FolderRow;
   folderId: string;
   threads: ThreadRow[];
   loading?: boolean;
+  error?: unknown;
+  onRetry?: () => void;
   selectedThreadId?: string;
   hasMore?: boolean;
   loadingMore?: boolean;
@@ -39,6 +44,8 @@ export function FolderThreadList({
   folderId,
   threads,
   loading,
+  error = null,
+  onRetry,
   selectedThreadId,
   hasMore = false,
   loadingMore = false,
@@ -56,30 +63,34 @@ export function FolderThreadList({
   const visibleIds = threads.slice(from, to).map((t) => t.id);
   const { data: labelsData } = useQuery(threadLabelsQuery(visibleIds));
   const labelsByThread: Record<string, MessageLabel[]> | undefined = labelsData?.labels;
+  const { data: mailboxesData } = useQuery(mailboxesQuery);
+  const accounts = mailboxesData?.mailboxes ?? [];
   return (
     <TooltipProvider delay={400}>
       <div className="flex h-full flex-col bg-card">
-        <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3">
-          <span
-            className="h-2.5 w-2.5 shrink-0 rounded-sm"
-            style={{ backgroundColor: folder?.color ?? "#64748b" }}
-          />
-          <span className="truncate font-semibold text-[13px]">{folder?.name ?? "Folder"}</span>
-          <span className="ml-auto pr-1 text-[11px] text-muted-foreground tabular-nums">
-            {threads.length}
-          </span>
-        </div>
+        <ListHeader
+          title={folder?.name ?? "Folder"}
+          subtitle="Folder · every account"
+          swatch={folder?.color ?? "#64748b"}
+          actions={
+            <span className="px-1.5 text-[11px] text-muted-foreground tabular-nums">
+              {threads.length}
+            </span>
+          }
+        />
         {loading ? (
           <ThreadListSkeleton />
+        ) : error ? (
+          <LoadError error={error} onRetry={() => onRetry?.()} className="m-auto" />
         ) : threads.length === 0 ? (
           <EmptyState
             icon={FolderIcon}
             title="This folder is empty"
-            hint="Drag a conversation onto the folder to file it here."
+            hint="Open a conversation and use Move to file it here."
             className="m-auto"
           />
         ) : (
-          <div ref={scrollRef} className="flex-1 overflow-y-auto">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto pb-20 md:pb-0">
             <ul className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
               {vItems.map((vi) => {
                 const t = threads[vi.index]!;
@@ -93,6 +104,7 @@ export function FolderThreadList({
                     folderId={folderId}
                     thread={t}
                     labels={labelsByThread?.[t.id]}
+                    account={accountLine({ kind: "folder", folderId }, t.mailboxId, accounts)}
                     active={t.id === selectedThreadId}
                   />
                 );
@@ -110,21 +122,11 @@ export function FolderThreadList({
   );
 }
 
-// Absolute placement for a virtualized row at `start` px down the spacer.
-function rowStyle(start: number): CSSProperties {
-  return {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: "100%",
-    transform: `translateY(${start}px)`,
-  };
-}
-
 function FolderRowItem({
   folderId,
   thread,
   labels,
+  account,
   active,
   rowRef,
   remeasure,
@@ -134,6 +136,7 @@ function FolderRowItem({
   folderId: string;
   thread: ThreadRow;
   labels?: MessageLabel[];
+  account: string | null;
   active: boolean;
   rowRef: (el: HTMLLIElement | null) => void;
   remeasure: (index: number, el: HTMLLIElement) => void;
@@ -182,6 +185,7 @@ function FolderRowItem({
         link={{ kind: "folder", folderId }}
         active={active}
         labels={labels}
+        account={account}
         rowRef={rowRef}
         remeasure={remeasure}
         style={style}

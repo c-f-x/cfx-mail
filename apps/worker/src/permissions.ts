@@ -1,7 +1,7 @@
 import type { DB } from "@cfmail/db";
 import { mailbox, mailboxMember } from "@cfmail/db/schema";
-import { ALL_PERMS, has, type PermBit } from "@cfmail/shared/permissions";
-import { and, eq, isNull, ne, or, sql } from "drizzle-orm";
+import { ALL_PERMS, has, Perm, type PermBit } from "@cfmail/shared/permissions";
+import { and, eq, isNull, ne, or, type SQL } from "drizzle-orm";
 import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { AppError } from "./errors.ts";
 
@@ -54,8 +54,49 @@ export async function resolveAccess(
   return { mailboxId, userId, perms: member.perms, isOwner: false, purging };
 }
 
-// Every non-service mailbox the user can read (owned + member). Backs the
-// combined "All" view; service mailboxes are key-driven and never user-facing.
+export interface MailboxGrant {
+  mailboxId: string;
+  perms: number;
+  isOwner: boolean;
+}
+
+// Every non-service mailbox the user owns or is a member of, with the bits they
+// hold: ALL_PERMS for the owner, the grant (possibly 0) for a member. Service
+// mailboxes are key-driven and never user-facing. `where` narrows further.
+async function mailboxGrants(db: DB, userId: string, where?: SQL): Promise<MailboxGrant[]> {
+  const rows = await db
+    .select({
+      id: mailbox.id,
+      ownerUserId: mailbox.ownerUserId,
+      memberPerms: mailboxMember.perms,
+    })
+    .from(mailbox)
+    .leftJoin(
+      mailboxMember,
+      and(eq(mailboxMember.mailboxId, mailbox.id), eq(mailboxMember.userId, userId)),
+    )
+    .where(
+      and(
+        or(eq(mailbox.ownerUserId, userId), eq(mailboxMember.userId, userId)),
+        ne(mailbox.type, "service"),
+        where,
+      ),
+    );
+  return rows.map((r) => {
+    const isOwner = r.ownerUserId === userId;
+    return { mailboxId: r.id, perms: isOwner ? ALL_PERMS : (r.memberPerms ?? 0), isOwner };
+  });
+}
+
+// The user's mailbox list: every mailbox they own or share, whatever bits they
+// hold. One being emptied stays listed (it shows empty); one being deleted is
+// already gone.
+export function listedMailboxes(db: DB, userId: string): Promise<MailboxGrant[]> {
+  return mailboxGrants(db, userId, mailboxNotDeletePending);
+}
+
+// Every non-service, non-purging mailbox the user can read (owned + member).
+// Backs the combined views: All Mail, custom folders, search and contacts.
 // `combinedView` additionally drops mailboxes opted out of All Mail — pass it
 // for the All Mail list/counts, not for surfaces the user filed into by hand
 // (custom folders), which stay complete. `perm` raises the bar from READ to a
@@ -65,28 +106,13 @@ export async function accessibleMailboxIds(
   userId: string,
   opts?: { combinedView?: boolean; perm?: PermBit },
 ): Promise<string[]> {
-  const memberWith = opts?.perm
-    ? and(
-        eq(mailboxMember.userId, userId),
-        sql`(${mailboxMember.perms} & ${opts.perm}) = ${opts.perm}`,
-      )
-    : eq(mailboxMember.userId, userId);
-  const rows = await db
-    .selectDistinct({ id: mailbox.id })
-    .from(mailbox)
-    .leftJoin(
-      mailboxMember,
-      and(eq(mailboxMember.mailboxId, mailbox.id), eq(mailboxMember.userId, userId)),
-    )
-    .where(
-      and(
-        or(eq(mailbox.ownerUserId, userId), memberWith),
-        ne(mailbox.type, "service"),
-        mailboxNotPurging,
-        opts?.combinedView ? eq(mailbox.excludeFromAll, false) : undefined,
-      ),
-    );
-  return rows.map((r) => r.id);
+  const grants = await mailboxGrants(
+    db,
+    userId,
+    and(mailboxNotPurging, opts?.combinedView ? eq(mailbox.excludeFromAll, false) : undefined),
+  );
+  const bit = opts?.perm ?? Perm.READ;
+  return grants.filter((g) => has(g.perms, bit)).map((g) => g.mailboxId);
 }
 
 export async function requirePerm(

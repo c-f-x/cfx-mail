@@ -86,32 +86,46 @@ function parseDate(
   return { iso: `${y}-${mo}-${d}T${h}:${mi}:${s}${z ?? ""}`, allDay: false };
 }
 
-// Hosts whose URLs we surface as a "Join meeting" action. Clients stash the
-// join link in different places — Google in X-GOOGLE-CONFERENCE, others in
-// LOCATION or DESCRIPTION — so we scan all of them for a known provider.
-const MEETING_HOSTS = [
-  /\bzoom\.us\b/i,
-  /\bzoomgov\.com\b/i,
-  /\bmeet\.google\.com\b/i,
-  /\bteams\.microsoft\.com\b/i,
-  /\bteams\.live\.com\b/i,
-  /\bmeet\.jit\.si\b/i,
-  /\bwebex\.com\b/i,
-  /\bwhereby\.com\b/i,
-  /\bgotomeeting\.com\b/i,
-  /\bgotomeet\.me\b/i,
-  /\bbluejeans\.com\b/i,
-  /\bchime\.aws\b/i,
+// Provider domains whose URLs we surface as a "Join meeting" action. Clients
+// stash the join link in different places — Google in X-GOOGLE-CONFERENCE, others
+// in LOCATION or DESCRIPTION — so we scan all of them. The link must be https and
+// its *host* must be the provider or a subdomain of it: matching anywhere in the
+// URL would accept "https://evil.example/zoom.us/j/1" as a trusted button.
+const MEETING_DOMAINS = [
+  "zoom.us",
+  "zoomgov.com",
+  "meet.google.com",
+  "teams.microsoft.com",
+  "teams.live.com",
+  "meet.jit.si",
+  "webex.com",
+  "whereby.com",
+  "gotomeeting.com",
+  "gotomeet.me",
+  "bluejeans.com",
+  "chime.aws",
 ];
 
 const URL_RE = /https?:\/\/[^\s<>"]+/gi;
+
+function isMeetingUrl(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:") return false;
+  const host = url.hostname.toLowerCase();
+  return MEETING_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`));
+}
 
 function findMeetingUrl(...texts: (string | null)[]): string | null {
   for (const text of texts) {
     if (!text) continue;
     for (const raw of text.match(URL_RE) ?? []) {
       const url = raw.replace(/[)\].,;]+$/, "");
-      if (MEETING_HOSTS.some((re) => re.test(url))) return url;
+      if (isMeetingUrl(url)) return url;
     }
   }
   return null;

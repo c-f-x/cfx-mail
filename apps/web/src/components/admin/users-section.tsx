@@ -8,10 +8,23 @@ import {
   Section,
   Select,
 } from "@/components/admin/shared.tsx";
+import { CopyButton } from "@/components/settings-ui.tsx";
 import { Button } from "@/components/ui/button.tsx";
-import { useConfirm, useConfirmHelpers } from "@/components/ui/confirm.tsx";
+import { Checkbox } from "@/components/ui/checkbox.tsx";
+import { useConfirmHelpers } from "@/components/ui/confirm.tsx";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { rpc, unwrap } from "@/lib/api.ts";
+import { deleteUserButton, sharedWithText } from "@/lib/delete-user.ts";
+import { type InviteNotSentReason, inviteNotSentReason } from "@/lib/invite-notice.ts";
 import { meQuery } from "@/lib/queries.ts";
 
 // The wire format carries `role` as a plain string.
@@ -23,6 +36,13 @@ interface UserInviteRow {
   role: "admin" | "user";
   expiresAt: string;
   usedAt: string | null;
+  url: string;
+}
+
+interface UnsentInvite {
+  email: string;
+  url: string;
+  reason: InviteNotSentReason;
 }
 
 export function UsersSection() {
@@ -36,6 +56,14 @@ export function UsersSection() {
     queryFn: () => unwrap(rpc.users.invites.$get()),
   });
   const pendingInvites = (invitesData?.invites ?? []).filter((i) => !i.usedAt);
+  // Invites and password resets are emailed from this address; without it,
+  // nothing reaches the invitee.
+  const { data: settingsData } = useQuery({
+    queryKey: ["domains-settings"],
+    queryFn: () => unwrap(rpc.domains.settings.$get()),
+  });
+  const noSender = settingsData !== undefined && !settingsData.authFromAddress;
+  const [unsent, setUnsent] = useState<UnsentInvite | null>(null);
 
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "user">("user");
@@ -43,9 +71,11 @@ export function UsersSection() {
     mutationFn: () =>
       unwrap(rpc.users.invites.$post({ json: { email: inviteEmail, role: inviteRole } })),
     onSuccess: (res) => {
+      const email = inviteEmail;
       setInviteEmail("");
       qc.invalidateQueries({ queryKey: ["admin-invites"] });
-      toast.success(res.sentEmail ? "Invite sent" : `Invite link: ${res.url}`);
+      if (res.sentEmail) toast.success(`Invite sent to ${email}`);
+      else setUnsent({ email, url: res.url, reason: res.notSentReason ?? "send_failed" });
     },
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
@@ -92,6 +122,12 @@ export function UsersSection() {
       </Section>
 
       <Section title="Send invite" description="User sets their own password via a one-time link.">
+        {noSender && (
+          <p className="mb-3 rounded-md border border-destructive/40 px-3 py-2 text-[12px] text-destructive">
+            Invites and password resets cannot be emailed: no sender address is set. Add one under
+            Domains, Transactional email.
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           <Input
             type="email"
@@ -125,6 +161,7 @@ export function UsersSection() {
             ))}
           </ul>
         )}
+        <UnsentInviteDialog invite={unsent} onClose={() => setUnsent(null)} />
       </Section>
 
       <Section
@@ -178,24 +215,15 @@ export function UsersSection() {
 
 function UserRow({ user }: { user: AdminUserRow }) {
   const qc = useQueryClient();
-  const confirm = useConfirm();
   const { data: meData } = useQuery(meQuery);
   const isMe = meData?.user?.id === user.id;
   const [open, setOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const setRole = useMutation({
     mutationFn: (role: "admin" | "user") =>
       unwrap(rpc.users[":id"].$patch({ param: { id: user.id }, json: { role } })),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-users"] }),
-    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
-  });
-
-  const remove = useMutation({
-    mutationFn: () => unwrap(rpc.users[":id"].$delete({ param: { id: user.id } })),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["admin-users"] });
-      toast.success("User removed");
-    },
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
@@ -233,15 +261,7 @@ function UserRow({ user }: { user: AdminUserRow }) {
               variant="outline"
               size="sm"
               className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={async () => {
-                const ok = await confirm({
-                  title: `Delete ${user.email}?`,
-                  description: "This permanently removes the user account.",
-                  confirmLabel: "Delete",
-                  destructive: true,
-                });
-                if (ok) remove.mutate();
-              }}
+              onClick={() => setDeleting(true)}
             >
               Delete
             </Button>
@@ -249,7 +269,106 @@ function UserRow({ user }: { user: AdminUserRow }) {
         </div>
       </div>
       {open && <DomainGrantsPanel userId={user.id} />}
+      {deleting && (
+        <DeleteUserDialog
+          user={user}
+          onClose={() => {
+            setDeleting(false);
+            qc.invalidateQueries({ queryKey: ["admin-users"] });
+          }}
+        />
+      )}
     </li>
+  );
+}
+
+// Deleting a person: the admin ticks which of their mailboxes go with them.
+// Nothing is ticked at first; every mailbox left unticked is handed to the
+// admin with its mail and members, so no shared mail goes by accident.
+function DeleteUserDialog({ user, onClose }: { user: AdminUserRow; onClose: () => void }) {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin-user-mailboxes", user.id],
+    queryFn: () => unwrap(rpc.users[":id"].mailboxes.$get({ param: { id: user.id } })),
+  });
+  const owned = data?.mailboxes ?? [];
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setTicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const remove = useMutation({
+    mutationFn: () =>
+      unwrap(
+        rpc.users[":id"].$delete({
+          param: { id: user.id },
+          json: { deleteMailboxIds: [...ticked] },
+        }),
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-mailboxes"] });
+      toast.success(`${user.email} removed`);
+      onClose();
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete {user.email}?</DialogTitle>
+          <DialogDescription>
+            They lose access at once. Tick the mailboxes to delete with all their mail. The others
+            are handed to you, with their mail and members; you can change their owner later.
+          </DialogDescription>
+        </DialogHeader>
+        {isLoading ? (
+          <p className="text-[13px] text-muted-foreground">Loading mailboxes…</p>
+        ) : owned.length === 0 ? (
+          <p className="text-[13px] text-muted-foreground">They own no mailboxes.</p>
+        ) : (
+          <ul className="divide-y rounded-md border">
+            {owned.map((mb) => {
+              const shared = sharedWithText(mb.sharedWith);
+              return (
+                <li key={mb.id}>
+                  <label
+                    htmlFor={`del-${mb.id}`}
+                    className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-[13px] select-none"
+                  >
+                    <Checkbox
+                      id={`del-${mb.id}`}
+                      checked={ticked.has(mb.id)}
+                      onCheckedChange={() => toggle(mb.id)}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{mb.address}</span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {mb.type}
+                      {shared && ` · ${shared}`}
+                    </span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline">Cancel</Button>} />
+          <Button
+            variant="destructive"
+            disabled={isLoading || remove.isPending}
+            onClick={() => remove.mutate()}
+          >
+            {deleteUserButton(ticked.size)}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -269,25 +388,58 @@ function InviteRow({ invite }: { invite: UserInviteRow }) {
           {invite.role} · expires {new Date(invite.expiresAt).toLocaleString()}
         </div>
       </div>
-      <Button
-        variant="outline"
-        size="sm"
-        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-        onClick={async () => {
-          if (
-            await confirm({
-              title: `Revoke invite for ${invite.email}?`,
-              description: "The invite link stops working immediately.",
-              confirmLabel: "Revoke",
-              destructive: true,
-            })
-          )
-            revoke.mutate();
-        }}
-      >
-        Revoke
-      </Button>
+      <div className="flex shrink-0 items-center gap-2">
+        <CopyButton value={invite.url} label="Copy link" />
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+          onClick={async () => {
+            if (
+              await confirm({
+                title: `Revoke invite for ${invite.email}?`,
+                description: "The invite link stops working immediately.",
+                confirmLabel: "Revoke",
+                destructive: true,
+              })
+            )
+              revoke.mutate();
+          }}
+        >
+          Revoke
+        </Button>
+      </div>
     </li>
+  );
+}
+
+// An invite whose email did not go out: say so, say why, and hand over the
+// link. It stays until closed, unlike a toast that fades before it is read.
+function UnsentInviteDialog({
+  invite,
+  onClose,
+}: {
+  invite: UnsentInvite | null;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open={invite !== null} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>The invite email to {invite?.email} was not sent</DialogTitle>
+          <DialogDescription>{invite && inviteNotSentReason(invite.reason)}</DialogDescription>
+        </DialogHeader>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 truncate rounded border bg-muted px-2 py-1.5 font-mono text-[12px]">
+            {invite?.url}
+          </code>
+          {invite && <CopyButton value={invite.url} label="Copy link" />}
+        </div>
+        <DialogFooter>
+          <DialogClose render={<Button variant="primary">Done</Button>} />
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

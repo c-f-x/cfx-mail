@@ -84,11 +84,22 @@ describe("sanitizeEmailHtml — benign HTML", () => {
 describe("sanitizeEmailHtml — failure fallback", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("returns the input untouched when the rewriter blows up", async () => {
-    vi.stubGlobal("HTMLRewriter", () => {
+  it("serves the text, escaped, never the raw HTML, when the rewriter blows up", async () => {
+    // `new` on an arrow function throws its own TypeError; this throws ours.
+    vi.stubGlobal("HTMLRewriter", function HTMLRewriter() {
       throw new Error("rewriter unavailable");
     });
-    const html = `<script>alert(1)</script>`;
-    expect(await sanitizeEmailHtml(html)).toBe(html);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const html = `<p onclick="steal()">Hi &amp; bye</p><script>alert(1)</script><p>5 &lt; 6</p>`;
+
+    const out = await sanitizeEmailHtml(html);
+
+    expect(out).not.toMatch(/<script|onclick|alert/i);
+    expect(out).toContain("Hi &amp; bye");
+    expect(out).toContain("5 &lt; 6");
+    expect(errors).toHaveBeenCalledWith("server-side html sanitize failed", {
+      error: "rewriter unavailable",
+    });
+    errors.mockRestore();
   });
 });

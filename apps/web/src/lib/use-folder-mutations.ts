@@ -18,7 +18,7 @@ interface FileInput {
 // counts and lists afterwards (also restoring on error).
 export function useFileThread() {
   const qc = useQueryClient();
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- onSettled invalidateThreadChange refreshes all affected lists/counts
+  // onSettled invalidateThreadChange refreshes all affected lists/counts
   return useMutation({
     mutationFn: (v: FileInput) =>
       unwrap(
@@ -40,7 +40,7 @@ export function useFileThread() {
 // Remove a conversation from a folder, returning it to its mailbox views.
 export function useUnfileThread() {
   const qc = useQueryClient();
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- onSettled invalidateThreadChange refreshes all affected lists/counts
+  // onSettled invalidateThreadChange refreshes all affected lists/counts
   return useMutation({
     mutationFn: (v: { folderId: string; threadId: string; mailboxId: string }) =>
       unwrap(

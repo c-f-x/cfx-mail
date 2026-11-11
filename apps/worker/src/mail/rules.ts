@@ -1,6 +1,7 @@
 import type { DB } from "@cfmail/db";
 import type { RuleCondition } from "@cfmail/db/schema";
 import { rule } from "@cfmail/db/schema";
+import { compileRuleRegex } from "@cfmail/shared/schemas";
 import { and, asc, eq } from "drizzle-orm";
 
 // Caps that keep matching on the inbound hot path bounded — the Workers runtime
@@ -27,7 +28,7 @@ export interface RuleOutcome {
   markRead: boolean;
   // Labels to attach to the inserted message (per-mailbox label ids).
   labelIds: string[];
-  // Last moveFolder wins; files into this user's thread_folder (invariant 17).
+  // Last moveFolder wins; files into this user's own thread_folder row.
   folder?: { userId: string; folderId: string };
   // Best-effort outbound sends, executed after the message is stored (never
   // block delivery). `ruleId` ties each back to its rule for throttle/audit.
@@ -177,16 +178,12 @@ function wildcardRegex(glob: string): RegExp | null {
   return re;
 }
 
-// User regex is opt-in power matching; invalid patterns (or any throw) match
-// nothing rather than crashing receive. Case-insensitive by default.
+// User regex is opt-in power matching. The rule schema refuses a pattern that
+// does not compile; one stored before that check matches nothing rather than
+// crashing receive.
 function safeRegex(pattern: string): RegExp | null {
   if (safeRegexCache.has(pattern)) return safeRegexCache.get(pattern) ?? null;
-  let re: RegExp | null;
-  try {
-    re = new RegExp(pattern, "i");
-  } catch {
-    re = null;
-  }
+  const re = compileRuleRegex(pattern);
   safeRegexCache.set(pattern, re);
   return re;
 }

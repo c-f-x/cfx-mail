@@ -2,24 +2,15 @@ import type { LucideIcon } from "lucide-react";
 import { Lock, LockOpen, ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip.tsx";
 import { cn } from "@/lib/cn.ts";
+import { authStatus } from "@/lib/message-trust.ts";
 import type { MessageRow } from "@/lib/queries.ts";
-
-// Interpret the parsed Authentication-Results summary. "fail" means the sender
-// is likely forged; "unverified" means we couldn't confirm it (no/none auth).
-export function authStatus(auth: MessageRow["spamAuth"]): "pass" | "fail" | "unverified" | null {
-  if (!auth) return null;
-  if (auth.dmarc === "pass" || (auth.spf === "pass" && auth.dkim === "pass")) return "pass";
-  if (auth.dmarc === "fail" || (auth.spf === "fail" && auth.dkim === "fail")) return "fail";
-  if (!auth.spf && !auth.dkim && !auth.dmarc) return null;
-  return "unverified";
-}
 
 export function shortFingerprint(fp: string): string {
   const s = fp.replace(/\s/g, "").toUpperCase();
   return s.length > 16 ? `${s.slice(0, 4)}…${s.slice(-8)}` : s;
 }
 
-// A single Proton-style padlock shown in front of the sender, folding the
+// A single padlock shown in front of the sender, folding the
 // strongest available trust signal into one glyph: end-to-end PGP encryption,
 // PGP signature verification, then transport authentication (SPF/DKIM/DMARC).
 type LockTone = "success" | "warning" | "destructive" | "muted";

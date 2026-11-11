@@ -1,10 +1,24 @@
-import { createMimeMessage } from "mimetext";
+import { createMimeMessage, Mailbox } from "mimetext";
 import PostalMime, { type Email as ParsedEmail } from "postal-mime";
+import {
+  replaceBlockBreaks,
+  replaceBlocks,
+  replaceComments,
+  stripTags,
+} from "../lib/html-strip.ts";
 
 export type { ParsedEmail };
 
 export async function parseMime(raw: ArrayBuffer | string | ReadableStream): Promise<ParsedEmail> {
   return await PostalMime.parse(raw);
+}
+
+// The stream held more bytes than the cap: the message can never be stored.
+export class MessageTooLargeError extends Error {
+  constructor(maxSize: number) {
+    super(`message exceeds max size ${maxSize}`);
+    this.name = "MessageTooLargeError";
+  }
 }
 
 export async function streamToArrayBuffer(
@@ -20,7 +34,7 @@ export async function streamToArrayBuffer(
     if (done) break;
     if (value) {
       total += value.byteLength;
-      if (total > maxSize) throw new Error(`message exceeds max size ${maxSize}`);
+      if (total > maxSize) throw new MessageTooLargeError(maxSize);
       chunks.push(value);
     }
   }
@@ -47,6 +61,15 @@ export function extractUnsubscribe(parsed: ParsedEmail): {
     listUnsubscribe: get("list-unsubscribe"),
     listUnsubscribePost: get("list-unsubscribe-post"),
   };
+}
+
+// The list's identifier from a List-Id header (RFC 2919): the part in angle
+// brackets, lower-cased. Null for mail that came through no list.
+export function extractListId(parsed: ParsedEmail): string | null {
+  const value = (parsed.headers ?? []).find((h) => h.key.toLowerCase() === "list-id")?.value;
+  if (!value) return null;
+  const id = (/<([^<>]+)>/.exec(value)?.[1] ?? value).trim().toLowerCase();
+  return id || null;
 }
 
 export interface ThreadingHeaders {
@@ -99,7 +122,8 @@ export function buildMime(input: BuildMimeInput): string {
   for (const [name, value] of Object.entries(buildThreadingHeaders(input))) {
     msg.setHeader(name, value);
   }
-  if (input.replyTo) msg.setHeader("Reply-To", input.replyTo);
+  // mimetext rejects a plain string for address headers.
+  if (input.replyTo) msg.setHeader("Reply-To", new Mailbox(input.replyTo));
   for (const [name, value] of Object.entries(input.extraHeaders ?? {})) {
     msg.setHeader(name, value);
   }
@@ -173,29 +197,29 @@ const HTML_ENTITIES: Record<string, string> = {
   "&apos;": "'",
 };
 
-const HTML_BLOCK_TAGS_RE = /<(script|style|head|noscript)[\s\S]*?<\/\1>/gi;
-const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
-const HTML_BLOCK_BREAK_RE =
-  /<\/?(p|div|br|li|tr|h[1-6]|table|ul|ol|blockquote|section|article)[^>]*>/gi;
-const HTML_TAG_RE = /<[^>]+>/g;
 const HTML_NUM_ENTITY_RE = /&#(\d+);/g;
 const HTML_NAMED_ENTITY_RE = /&[a-z#0-9]+;/gi;
 const HTML_INLINE_WS_RE = /[^\S\n]+/g;
-const HTML_NEWLINE_WS_RE = /\s*\n\s*/g;
+const HTML_WS_RUN_RE = /\s+/g;
+
+// A numeric entity names any number; only Unicode scalar values are text.
+// `String.fromCodePoint` throws above U+10FFFF, and a lone surrogate is not
+// valid in stored text.
+function decodeCodePoint(code: number): string {
+  const scalar = code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff);
+  return scalar ? String.fromCodePoint(code) : " ";
+}
 
 // Convert HTML to readable plaintext for indexing: drop script/style blocks
 // entirely (otherwise CSS/JS pollutes the index), turn block-level tags into
 // newlines, strip remaining tags, decode common entities, collapse whitespace.
+// Runs on delivery for HTML-only mail, so every pass is linear (lib/html-strip.ts).
 export function htmlToText(html: string): string {
-  return html
-    .replace(HTML_BLOCK_TAGS_RE, " ")
-    .replace(HTML_COMMENT_RE, " ")
-    .replace(HTML_BLOCK_BREAK_RE, "\n")
-    .replace(HTML_TAG_RE, " ")
-    .replace(HTML_NUM_ENTITY_RE, (_, code) => String.fromCodePoint(Number(code)))
+  return stripTags(replaceBlockBreaks(replaceComments(replaceBlocks(html, " "), " "), "\n"), " ")
+    .replace(HTML_NUM_ENTITY_RE, (_, code) => decodeCodePoint(Number(code)))
     .replace(HTML_NAMED_ENTITY_RE, (m) => HTML_ENTITIES[m.toLowerCase()] ?? " ")
     .replace(HTML_INLINE_WS_RE, " ")
-    .replace(HTML_NEWLINE_WS_RE, "\n")
+    .replace(HTML_WS_RUN_RE, (run) => (run.includes("\n") ? "\n" : run))
     .trim();
 }
 

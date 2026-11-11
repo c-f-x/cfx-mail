@@ -1,7 +1,7 @@
 import { Perm } from "@cfmail/shared/permissions";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { labelsRoutes } from "../../src/api/labels.ts";
-import { applyMigrationsOnce, db, mountApp, request, resetDb } from "../support/app.ts";
+import { applyMigrationsOnce, db, e, mountApp, request, resetDb } from "../support/app.ts";
 import {
   grantMember,
   MAILBOX_ID,
@@ -16,6 +16,17 @@ import {
 const asOwner = () => mountApp(labelsRoutes, owner);
 const asMember = () => mountApp(labelsRoutes, member);
 const asOutsider = () => mountApp(labelsRoutes, outsider);
+
+type Labels = { labels: Record<string, unknown[]> };
+
+// A thread in MAILBOX_ID whose one message carries one label, set by the owner.
+async function labelledThread(): Promise<{ messageId: string; threadId: string }> {
+  const seeded = await seedThread(db());
+  const created = await request(asOwner(), "POST", "/", { mailboxId: MAILBOX_ID, name: "Seen" });
+  const { id } = (await created.json()) as { id: string };
+  await request(asOwner(), "PUT", `/${id}/threads/${seeded.threadId}`);
+  return seeded;
+}
 
 beforeAll(applyMigrationsOnce);
 beforeEach(async () => {
@@ -167,6 +178,39 @@ describe("labels", () => {
     const body = (await res.json()) as { labels: Record<string, unknown[]> };
     expect(body.labels[threadId]).toHaveLength(1);
   });
+
+  it("by-threads filters out mailboxes the caller can't read", async () => {
+    await grantMember(db(), Perm.READ);
+    const { threadId } = await labelledThread();
+
+    const ok = await request(asMember(), "GET", `/by-threads?id=${threadId}`);
+    expect(((await ok.json()) as Labels).labels[threadId]).toHaveLength(1);
+
+    const blocked = await request(asOutsider(), "GET", `/by-threads?id=${threadId}`);
+    expect(blocked.status).toBe(200);
+    expect(((await blocked.json()) as Labels).labels[threadId]).toBeUndefined();
+  });
+
+  // A database failure is not a refusal: the caller must see an error, not a
+  // conversation that silently lost its labels. Renaming the membership table
+  // makes the member's access check fail inside real D1.
+  it.each(["by-messages", "by-threads"])(
+    "%s answers 500 when the access check fails",
+    async (route) => {
+      await grantMember(db(), Perm.READ);
+      const { messageId, threadId } = await labelledThread();
+      const id = route === "by-messages" ? messageId : threadId;
+
+      await e.DB.exec("ALTER TABLE mailbox_member RENAME TO mailbox_member_offline");
+      try {
+        const res = await request(asMember(), "GET", `/${route}?id=${id}`);
+        expect(res.status).toBe(500);
+        expect(await res.json()).toEqual({ error: "internal_error" });
+      } finally {
+        await e.DB.exec("ALTER TABLE mailbox_member_offline RENAME TO mailbox_member");
+      }
+    },
+  );
 
   it("returns empty maps for the bulk endpoints with no ids", async () => {
     const app = asOwner();

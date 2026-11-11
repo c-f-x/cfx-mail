@@ -197,7 +197,15 @@ describe("domains", () => {
     expect(res.status).toBe(403);
   });
 
-  it("deletes a domain", async () => {
+  it("409s deleting a domain that still has mailboxes", async () => {
+    const res = await request(asAdmin(), "DELETE", `/${DOMAIN_ID}`);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "Delete this domain's mailboxes first." });
+    expect(await db().query.domain.findFirst({ where: eq(domain.id, DOMAIN_ID) })).toBeDefined();
+    expect(await db().query.mailbox.findMany()).toHaveLength(2);
+  });
+
+  it("deletes a domain with no mailboxes", async () => {
     const created = await request(asAdmin(), "POST", "/", { name: "gone.test" });
     const { id } = (await created.json()) as { id: string };
     const res = await request(asAdmin(), "DELETE", `/${id}`);

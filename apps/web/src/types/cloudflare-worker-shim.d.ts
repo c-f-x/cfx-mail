@@ -33,9 +33,6 @@ interface DurableObjectNamespace {
 interface Fetcher {
   [key: string]: any;
 }
-interface Ai {
-  [key: string]: any;
-}
 
 interface HTMLRewriterContentHandlersShim {
   element?(element: any): void | Promise<void>;

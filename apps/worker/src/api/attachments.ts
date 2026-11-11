@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { dbFromCtx } from "../db.ts";
 import type { AppBindings } from "../env.ts";
+import { draftUploadKey, isOwnDraftUpload } from "../mail/blob-keys.ts";
 import { requireUser } from "../middleware.ts";
 import { requirePerm } from "../permissions.ts";
 
@@ -22,7 +23,7 @@ export function attachmentsRoutes() {
       if (body.byteLength > 25 * 1024 * 1024)
         throw new HTTPException(413, { message: "too large" });
 
-      const key = `draft/${user.id}/${crypto.randomUUID()}-${sanitize(filename)}`;
+      const key = draftUploadKey(user.id, crypto.randomUUID(), filename);
       await c.env.BLOBS.put(key, body, { httpMetadata: { contentType } });
       return c.json({ r2Key: key, filename, contentType, sizeBytes: body.byteLength });
     })
@@ -34,7 +35,7 @@ export function attachmentsRoutes() {
     .get("/draft-blob", async (c) => {
       const user = c.get("user")!;
       const key = c.req.query("key") ?? "";
-      if (!key.startsWith(`draft/${user.id}/`)) {
+      if (!isOwnDraftUpload(user.id, key)) {
         throw new HTTPException(403, { message: "forbidden" });
       }
       const obj = await c.env.BLOBS.get(key);
@@ -81,24 +82,33 @@ export function attachmentsRoutes() {
   return r;
 }
 
-function sanitize(name: string): string {
-  return name.replace(/[^a-z0-9._-]+/gi, "_").slice(0, 128);
-}
+// The only content-types served as themselves: raster images and PDF, which is
+// what the in-app preview shows (components/message/attachment-preview.tsx).
+// The stored type is the sender's claim, and a script-capable one ("text/javascript",
+// "text/html", "image/svg+xml") is a valid same-origin subresource or document
+// on our origin, so everything else is served as opaque bytes.
+const SERVED_AS_IS = /^(image\/(png|jpe?g|gif|webp|avif|bmp)|application\/pdf)$/;
 
-// Content-types that browsers may execute/render inline if sniffed. Serve them
-// as opaque downloads so a malicious email-supplied attachment can't run script
-// in our origin even if a client ignores content-disposition.
-const RENDERABLE =
-  /^(text\/html|text\/xml|application\/xhtml\+xml|image\/svg\+xml|application\/xml)/i;
-
-export function attachmentHeaders(contentType: string, filename: string): Record<string, string> {
-  const safeType =
-    !contentType || RENDERABLE.test(contentType) ? "application/octet-stream" : contentType;
-  return {
-    "content-type": safeType,
-    "content-disposition": `attachment; filename="${filename.replace(/"/g, "_")}"`,
+/**
+ * Response headers for stored attachment bytes. With `inline`, a raster image or
+ * PDF is shown in place; everything else, and every request without `inline`,
+ * is a download as `application/octet-stream`. Always nosniff and sandboxed.
+ */
+export function attachmentHeaders(
+  contentType: string,
+  filename: string,
+  { inline = false }: { inline?: boolean } = {},
+): Record<string, string> {
+  const base = (contentType.split(";")[0] ?? "").trim().toLowerCase();
+  const asIs = SERVED_AS_IS.test(base);
+  const headers: Record<string, string> = {
+    "content-type": asIs ? base : "application/octet-stream",
     // Mirror the image proxy: never sniff, never let the bytes act as anything.
     "x-content-type-options": "nosniff",
     "content-security-policy": "default-src 'none'; sandbox",
   };
+  if (!(inline && asIs)) {
+    headers["content-disposition"] = `attachment; filename="${filename.replace(/"/g, "_")}"`;
+  }
+  return headers;
 }

@@ -1,12 +1,10 @@
 import type { DB } from "@cfmail/db";
 import {
+  appPassword,
   contactKey,
   domain,
   mailbox,
-  mailboxAiUsage,
-  mailboxInvite,
   mailboxMember,
-  mailboxSpamUsage,
   message,
   thread,
   threadFolder,
@@ -16,7 +14,6 @@ import { Flag } from "@cfmail/shared/flags";
 import { grant, Perm } from "@cfmail/shared/permissions";
 import type {
   ContactKeysDto,
-  MailboxInvitesDto,
   MailboxListDto,
   MailboxMembersDto,
   MailboxSettingsDto,
@@ -28,17 +25,17 @@ import {
   grantMember,
   importPgpKey,
   type PgpMode,
+  TEMP_TTL_DEFAULT_SECONDS,
   updateMailboxSettings,
   verifyContactKey,
 } from "@cfmail/shared/schemas";
-import { zValidator } from "@hono/zod-validator";
-import { and, count, eq, gt, inArray, ne, or, sql } from "drizzle-orm";
+import { and, count, eq, gt, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { getOrCreatePgpMasterKey } from "../config.ts";
 import { dbFromCtx } from "../db.ts";
 import type { AppBindings } from "../env.ts";
-import { materializeInvites } from "../invites.ts";
+import { isUniqueViolation, wrapUnique } from "../errors.ts";
 import { ingestRaw, MAX_EMAIL_BYTES } from "../mail/ingest.ts";
 import { bodyForIndex, parseMime } from "../mail/mime.ts";
 import {
@@ -51,11 +48,24 @@ import {
 import { authorizeMailboxCreate } from "../mailbox-access.ts";
 import { markMailboxPurge } from "../mailbox-purge.ts";
 import { requireUser } from "../middleware.ts";
-import { mailboxNotDeletePending, mailboxNotPurging, requirePerm } from "../permissions.ts";
+import { listedMailboxes, mailboxNotPurging, requirePerm, resolveAccess } from "../permissions.ts";
+import { zValidator } from "./validate.ts";
+
+const TYPE_RANK: Record<string, number> = { personal: 0, group: 1, temp: 2 };
+
+function compareMailboxes(
+  a: { address: string; type: string },
+  b: { address: string; type: string },
+): number {
+  const [aLocal = "", aDomain = ""] = a.address.toLowerCase().split("@");
+  const [bLocal = "", bDomain = ""] = b.address.toLowerCase().split("@");
+  if (aDomain !== bDomain) return aDomain < bDomain ? -1 : 1;
+  const rank = (TYPE_RANK[a.type] ?? 9) - (TYPE_RANK[b.type] ?? 9);
+  if (rank !== 0) return rank;
+  return aLocal < bLocal ? -1 : aLocal > bLocal ? 1 : 0;
+}
 
 export function mailboxesRoutes() {
-  // Suppress unused-import warning from tree-shaking of `or`.
-  void or;
   const r = new Hono<AppBindings>()
 
     .use("*", requireUser)
@@ -64,59 +74,55 @@ export function mailboxesRoutes() {
       const db = dbFromCtx(c);
       const u = c.get("user")!;
 
-      // Invites for an already-signed-in user materialize here (login covers the
-      // rest via the session hook) so a fresh grant shows up without re-login.
-      await materializeInvites(db, u.id, u.email);
+      // Which mailboxes the user sees, and with which bits, is permissions.ts's
+      // call (owned + shared, no service mailboxes, none being deleted).
+      const grants = await listedMailboxes(db, u.id);
+      const rows = grants.length
+        ? await db
+            .select({
+              id: mailbox.id,
+              localPart: mailbox.localPart,
+              displayName: mailbox.displayName,
+              type: mailbox.type,
+              expiresAt: mailbox.expiresAt,
+              domainName: domain.name,
+              pgpMode: mailbox.pgpMode,
+              excludeFromAll: mailbox.excludeFromAll,
+            })
+            .from(mailbox)
+            .innerJoin(domain, eq(mailbox.domainId, domain.id))
+            .where(
+              inArray(
+                mailbox.id,
+                grants.map((g) => g.mailboxId),
+              ),
+            )
+            .limit(1000)
+        : [];
+      const byId = new Map(rows.map((m) => [m.id, m]));
 
-      // Owned + shared mailboxes in one pass: left-join membership for this user so
-      // a row is owned (ownerUserId match) and/or shared (non-null perms). Owner
-      // wins when both — it gets full perms regardless of any member grant.
-      // service mailboxes are key-driven, never user-facing — keep them out.
-      // Hide mailboxes being hard-deleted; empty-pending ones stay (shown empty).
-      const rows = await db
-        .select({
-          id: mailbox.id,
-          localPart: mailbox.localPart,
-          displayName: mailbox.displayName,
-          type: mailbox.type,
-          expiresAt: mailbox.expiresAt,
-          domainName: domain.name,
-          pgpMode: mailbox.pgpMode,
-          aiFeatures: mailbox.aiFeatures,
-          excludeFromAll: mailbox.excludeFromAll,
-          ownerUserId: mailbox.ownerUserId,
-          perms: mailboxMember.perms,
-        })
-        .from(mailbox)
-        .innerJoin(domain, eq(mailbox.domainId, domain.id))
-        .leftJoin(
-          mailboxMember,
-          and(eq(mailboxMember.mailboxId, mailbox.id), eq(mailboxMember.userId, u.id)),
-        )
-        .where(
-          and(
-            or(eq(mailbox.ownerUserId, u.id), eq(mailboxMember.userId, u.id)),
-            ne(mailbox.type, "service"),
-            mailboxNotDeletePending,
-          ),
-        )
-        .limit(1000);
-
-      const all = rows.map((m) => {
-        const isOwner = m.ownerUserId === u.id;
-        return {
-          id: m.id,
-          address: `${m.localPart}@${m.domainName}`,
-          displayName: m.displayName,
-          type: m.type,
-          expiresAt: m.expiresAt,
-          pgpMode: m.pgpMode,
-          aiFeatures: m.aiFeatures,
-          excludeFromAll: m.excludeFromAll,
-          role: isOwner ? ("owner" as const) : ("member" as const),
-          perms: isOwner ? 7 : (m.perms ?? 0),
-        };
+      const all = grants.flatMap((g) => {
+        const m = byId.get(g.mailboxId);
+        if (!m) return [];
+        return [
+          {
+            id: m.id,
+            address: `${m.localPart}@${m.domainName}`,
+            displayName: m.displayName,
+            type: m.type,
+            expiresAt: m.expiresAt,
+            pgpMode: m.pgpMode,
+            excludeFromAll: m.excludeFromAll,
+            role: g.isOwner ? ("owner" as const) : ("member" as const),
+            perms: g.perms,
+          },
+        ];
       });
+
+      // A defined order, so the account switcher and the composer's default From
+      // do not shift between requests: by domain, then personal before group
+      // before temp, then by address. Case-insensitive.
+      all.sort(compareMailboxes);
 
       // Unread badge per mailbox: active (non-trash/spam) threads with unread
       // inbound mail. `unreadCount > 0` already implies an unseen inbound message.
@@ -162,19 +168,27 @@ export function mailboxesRoutes() {
       await authorizeMailboxCreate(db, u, body.domainId, body.type);
 
       const id = crypto.randomUUID();
-      const expiresAt = body.ttlSeconds ? new Date(Date.now() + body.ttlSeconds * 1000) : null;
+      // A temp mailbox always expires, so the cron deletes it; no other kind does.
+      const expiresAt =
+        body.type === "temp"
+          ? new Date(Date.now() + (body.ttlSeconds ?? TEMP_TTL_DEFAULT_SECONDS) * 1000)
+          : null;
 
-      await db.insert(mailbox).values({
-        id,
-        domainId: body.domainId,
-        localPart: body.localPart.toLowerCase(),
-        displayName: body.displayName ?? null,
-        type: body.type,
-        ownerUserId: u.id,
-        signature: body.signature ?? null,
-        replyTo: body.replyTo ?? null,
-        expiresAt,
-      });
+      await wrapUnique(
+        () =>
+          db.insert(mailbox).values({
+            id,
+            domainId: body.domainId,
+            localPart: body.localPart.toLowerCase(),
+            displayName: body.displayName ?? null,
+            type: body.type,
+            ownerUserId: u.id,
+            signature: body.signature ?? null,
+            replyTo: body.replyTo ?? null,
+            expiresAt,
+          }),
+        "address already in use",
+      );
 
       return c.json({ id }, 201);
     })
@@ -193,9 +207,6 @@ export function mailboxesRoutes() {
           replyTo: true,
           type: true,
           spamFilter: true,
-          spamAiTokenCap: true,
-          aiFeatures: true,
-          aiTokenCap: true,
           pgpMode: true,
           pgpFingerprint: true,
           pgpPublicKey: true,
@@ -204,16 +215,6 @@ export function mailboxesRoutes() {
         },
       });
       if (!mb) throw new HTTPException(404, { message: "not found" });
-      const [usage, aiUsage] = await Promise.all([
-        db.query.mailboxSpamUsage.findFirst({
-          where: eq(mailboxSpamUsage.mailboxId, id),
-          columns: { period: true, calls: true, tokensIn: true, tokensOut: true },
-        }),
-        db.query.mailboxAiUsage.findFirst({
-          where: eq(mailboxAiUsage.mailboxId, id),
-          columns: { period: true, calls: true, tokensIn: true, tokensOut: true },
-        }),
-      ]);
       return c.json({
         id: mb.id,
         type: mb.type,
@@ -221,23 +222,6 @@ export function mailboxesRoutes() {
         signature: mb.signature,
         replyTo: mb.replyTo,
         spamFilter: mb.spamFilter,
-        spamAiTokenCap: mb.spamAiTokenCap,
-        spamUsage: usage
-          ? {
-              period: usage.period,
-              calls: usage.calls,
-              tokens: usage.tokensIn + usage.tokensOut,
-            }
-          : null,
-        aiFeatures: mb.aiFeatures,
-        aiTokenCap: mb.aiTokenCap,
-        aiUsage: aiUsage
-          ? {
-              period: aiUsage.period,
-              calls: aiUsage.calls,
-              tokens: aiUsage.tokensIn + aiUsage.tokensOut,
-            }
-          : null,
         pgpMode: mb.pgpMode,
         pgpFingerprint: mb.pgpFingerprint,
         pgpPublicKey: mb.pgpPublicKey,
@@ -263,7 +247,7 @@ export function mailboxesRoutes() {
         throw new HTTPException(400, { message: "temp mailboxes are not editable" });
       }
 
-      // Spam filter level + AI budget are admin-only (see /api/admin/mailboxes/:id/settings);
+      // Spam filter level is admin-only (see /api/admin/mailboxes/:id/settings);
       // owners can edit identity fields but not the spam policy applied to their mailbox.
       const patch: Partial<{
         displayName: string | null;
@@ -274,7 +258,8 @@ export function mailboxesRoutes() {
         excludeFromAll: boolean;
       }> = {};
       if (body.displayName !== undefined) {
-        patch.displayName = body.displayName?.trim() ? body.displayName.trim() : null;
+        // Trimmed, and empty means none, by the schema (senderName).
+        patch.displayName = body.displayName;
       }
       if (body.signature !== undefined) {
         patch.signature = body.signature?.trim() ? body.signature : null;
@@ -531,17 +516,32 @@ export function mailboxesRoutes() {
       if (seen) flags |= Flag.SEEN;
       if (starred) flags |= Flag.STARRED;
 
-      const result = await ingestRaw(c.env, db, {
-        mailboxId: id,
-        raw,
-        parsed,
-        direction,
-        deliveredTo: direction === "in" ? ownAddr || null : null,
-        flags,
-        receivedAt: direction === "in" ? when : null,
-        sentAt: direction === "out" ? when : null,
-        spam: null,
-      });
+      let result: Awaited<ReturnType<typeof ingestRaw>>;
+      try {
+        result = await ingestRaw(c.env, db, {
+          mailboxId: id,
+          raw,
+          parsed,
+          direction,
+          deliveredTo: direction === "in" ? ownAddr || null : null,
+          flags,
+          receivedAt: direction === "in" ? when : null,
+          sentAt: direction === "out" ? when : null,
+          spam: null,
+        });
+      } catch (err) {
+        // Two imports of one message that arrive together both pass the lookup
+        // above. A unique index lets one in, and ingestRaw has undone the
+        // other. Look again, so no other failure passes for a duplicate.
+        if (parsed.messageId && isUniqueViolation(err)) {
+          const dup = await db.query.message.findFirst({
+            where: and(eq(message.mailboxId, id), eq(message.messageIdHdr, parsed.messageId)),
+            columns: { id: true },
+          });
+          if (dup) return c.json({ duplicate: true });
+        }
+        throw err;
+      }
 
       // Trash and spam are thread-level, mutually-exclusive buckets (see threads.ts).
       if (wantTrash || wantSpam) {
@@ -558,12 +558,26 @@ export function mailboxesRoutes() {
       const db = dbFromCtx(c);
       const u = c.get("user")!;
       const id = c.req.param("id");
-      const mb = await db.query.mailbox.findFirst({
-        where: eq(mailbox.id, id),
-        columns: { ownerUserId: true },
+      // Owner only by design: no member bit, MANAGE included, may delete a mailbox.
+      const access = await resolveAccess(db, u.id, id);
+      if (!access) throw new HTTPException(404, { message: "not found" });
+      if (!access.isOwner) throw new HTTPException(403, { message: "owner only" });
+      // A mailbox others use is not one person's to delete: only an admin may.
+      const shared = await db.query.mailboxMember.findFirst({
+        where: eq(mailboxMember.mailboxId, id),
+        columns: { userId: true },
       });
-      if (!mb) throw new HTTPException(404, { message: "not found" });
-      if (mb.ownerUserId !== u.id) throw new HTTPException(403, { message: "owner only" });
+      if (shared) {
+        const me = await db.query.user.findFirst({
+          where: eq(user.id, u.id),
+          columns: { role: true },
+        });
+        if (me?.role !== "admin") {
+          throw new HTTPException(409, {
+            message: "This mailbox is shared with others. Ask an admin to delete it.",
+          });
+        }
+      }
       // Mark for background purge; the cron drains threads/blobs, then drops the
       // row. The mailbox reads as gone immediately (mailboxNotDeletePending).
       await markMailboxPurge(db, id, "delete");
@@ -616,46 +630,21 @@ export function mailboxesRoutes() {
       return c.json({ ok: true, userId: found.id });
     })
 
-    .get("/:id/invites", async (c) => {
-      const db = dbFromCtx(c);
-      const u = c.get("user")!;
-      const id = c.req.param("id");
-      await requirePerm(db, u.id, id, Perm.MANAGE);
-      const rows = await db
-        .select({
-          id: mailboxInvite.id,
-          email: mailboxInvite.email,
-          perms: mailboxInvite.perms,
-          createdAt: mailboxInvite.createdAt,
-        })
-        .from(mailboxInvite)
-        .where(eq(mailboxInvite.mailboxId, id));
-      return c.json({
-        invites: rows.map((inv) => ({ ...inv, createdAt: inv.createdAt.toISOString() })),
-      } satisfies MailboxInvitesDto);
-    })
-
-    .delete("/:id/invites/:inviteId", async (c) => {
-      const db = dbFromCtx(c);
-      const u = c.get("user")!;
-      const id = c.req.param("id");
-      const inviteId = c.req.param("inviteId");
-      await requirePerm(db, u.id, id, Perm.MANAGE);
-      await db
-        .delete(mailboxInvite)
-        .where(and(eq(mailboxInvite.id, inviteId), eq(mailboxInvite.mailboxId, id)));
-      return c.body(null, 204);
-    })
-
     .delete("/:id/members/:userId", async (c) => {
       const db = dbFromCtx(c);
       const u = c.get("user")!;
       const id = c.req.param("id");
       const uid = c.req.param("userId");
       await requirePerm(db, u.id, id, Perm.MANAGE);
-      await db
-        .delete(mailboxMember)
-        .where(and(eq(mailboxMember.mailboxId, id), eq(mailboxMember.userId, uid)));
+      // Their app passwords for this mailbox go with the membership.
+      await db.batch([
+        db
+          .delete(mailboxMember)
+          .where(and(eq(mailboxMember.mailboxId, id), eq(mailboxMember.userId, uid))),
+        db
+          .delete(appPassword)
+          .where(and(eq(appPassword.mailboxId, id), eq(appPassword.userId, uid))),
+      ]);
       return c.body(null, 204);
     });
 

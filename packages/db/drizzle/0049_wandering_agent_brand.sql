@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `message_outbound_uq` ON `message` (`mailbox_id`,`message_id_hdr`) WHERE "message"."direction" = 'out' AND "message"."message_id_hdr" IS NOT NULL;

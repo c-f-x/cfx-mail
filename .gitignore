@@ -14,3 +14,4 @@ coverage
 apps/web/dist
 apps/worker/.wrangler
 apps/worker/dist
+.playwright-mcp

@@ -1,23 +1,11 @@
 import { Clock } from "lucide-react";
 import { useState } from "react";
 import { useCreateReminder } from "@/lib/reminders.ts";
+import { atHour, combineDateTime, isBeforeDay } from "@/lib/time.ts";
 import { Button } from "./ui/button.tsx";
 import { Calendar } from "./ui/calendar.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
 import { Tooltip } from "./ui/tooltip.tsx";
-
-function combineDateTime(day: Date, time: string): Date {
-  const [h, m] = time.split(":").map(Number);
-  const out = new Date(day);
-  out.setHours(h ?? 0, m ?? 0, 0, 0);
-  return out;
-}
-
-function atHour(d: Date, hour: number): Date {
-  const out = new Date(d);
-  out.setHours(hour, 0, 0, 0);
-  return out;
-}
 
 export function remindPresets(): { label: string; when: Date }[] {
   const now = new Date();
@@ -92,7 +80,7 @@ export function ReminderMenu({ threadId, mailboxId, messageId }: Props) {
             mode="single"
             selected={customDate}
             onSelect={setCustomDate}
-            disabled={{ before: new Date() }}
+            disabled={(day) => isBeforeDay(day, new Date())}
             className="p-0"
           />
           <div className="mt-1 flex items-center gap-2 px-1">

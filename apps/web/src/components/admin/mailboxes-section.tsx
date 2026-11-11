@@ -7,7 +7,6 @@ import {
   type AdminMailbox,
   type AdminUser,
   type Domain,
-  KIND_CHECKBOXES,
   KindBadge,
   Mono,
   Section,
@@ -29,6 +28,7 @@ import {
 import { Input } from "@/components/ui/input.tsx";
 import { ToggleGroup, ToggleItem } from "@/components/ui/toggle-group.tsx";
 import { rpc, unwrap } from "@/lib/api.ts";
+import { formMailboxKinds } from "@/lib/mailbox-kinds.ts";
 import { type MailboxSummary, mailboxesQuery, meQuery } from "@/lib/queries.ts";
 
 interface RedirectRow {
@@ -78,7 +78,7 @@ function OwnMailboxes() {
     (grantsData?.grants ?? []).map((g) => [g.domainId, g.allowedKinds]),
   );
   const eligibleDomains = (domainsData?.domains ?? []).filter(
-    (d) => (d.allowedKinds & (grantByDomain.get(d.id) ?? 0)) !== 0,
+    (d) => formMailboxKinds(d.allowedKinds & (grantByDomain.get(d.id) ?? 0)).length > 0,
   );
 
   return (
@@ -293,9 +293,9 @@ function CreateMailboxForm({
 
   const dom = eligibleDomains.find((d) => d.id === domain);
   const kinds = dom ? allowedKindsFor(dom) : 0;
-  const typeOptions = KIND_CHECKBOXES.filter((k) => (kinds & k.bit) === k.bit);
+  const typeOptions = formMailboxKinds(kinds);
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidation runs in onCreated
+  // invalidation runs in onCreated
   const create = useMutation({
     mutationFn: () =>
       unwrap(rpc.mailboxes.$post({ json: { domainId: domain, localPart: local, type } })),
@@ -321,8 +321,8 @@ function CreateMailboxForm({
         onValueChange={(v) => {
           setDomain(v);
           const d = eligibleDomains.find((x) => x.id === v);
-          const first = d && KIND_CHECKBOXES.find((k) => (allowedKindsFor(d) & k.bit) === k.bit);
-          if (first) setType(first.type);
+          const first = d && formMailboxKinds(allowedKindsFor(d))[0];
+          if (first) setType(first);
         }}
         className="min-w-[160px] flex-1"
         placeholder="Select domain…"
@@ -336,7 +336,7 @@ function CreateMailboxForm({
         className="min-w-[110px]"
         placeholder="type"
         ariaLabel="Mailbox kind"
-        options={typeOptions.map((k) => ({ value: k.type, label: k.label }))}
+        options={typeOptions.map((k) => ({ value: k, label: k }))}
       />
       <Button
         variant="primary"
@@ -383,10 +383,11 @@ function AdminCreateForm({
   const effLocal = rCatchAll ? "*" : rLocal;
 
   const dom = eligibleDomains.find((d) => d.id === domain);
-  const typeOptions = KIND_CHECKBOXES.filter((k) => dom && (dom.allowedKinds & k.bit) === k.bit);
+  const typeOptions = dom ? formMailboxKinds(dom.allowedKinds) : [];
+  const mailboxDomains = eligibleDomains.filter((d) => formMailboxKinds(d.allowedKinds).length > 0);
   const redirectTargets = mailboxes.filter((m) => m.type !== "temp" && m.type !== "service");
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidation runs in onCreated
+  // invalidation runs in onCreated
   const createMailbox = useMutation({
     mutationFn: () =>
       unwrap(
@@ -402,7 +403,7 @@ function AdminCreateForm({
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidation runs in onCreated
+  // invalidation runs in onCreated
   const createRedirect = useMutation({
     mutationFn: () =>
       unwrap(
@@ -440,13 +441,13 @@ function AdminCreateForm({
             onValueChange={(v) => {
               setDomain(v);
               const d = eligibleDomains.find((x) => x.id === v);
-              const first = d && KIND_CHECKBOXES.find((k) => (d.allowedKinds & k.bit) === k.bit);
-              if (first) setType(first.type);
+              const first = d && formMailboxKinds(d.allowedKinds)[0];
+              if (first) setType(first);
             }}
             className="min-w-[160px] flex-1"
             placeholder="Select domain…"
             ariaLabel="Domain"
-            options={eligibleDomains.map((d) => ({ value: d.id, label: d.name }))}
+            options={mailboxDomains.map((d) => ({ value: d.id, label: d.name }))}
           />
           <Select
             value={typeOptions.length === 0 ? "" : type}
@@ -457,8 +458,8 @@ function AdminCreateForm({
             ariaLabel="Mailbox kind"
             placeholder="Type…"
             options={typeOptions.map((k) => ({
-              value: k.type,
-              label: k.label.charAt(0).toUpperCase() + k.label.slice(1),
+              value: k,
+              label: k.charAt(0).toUpperCase() + k.slice(1),
             }))}
           />
           <Select
@@ -545,7 +546,7 @@ function RedirectRow({
   const [target, setTarget] = useState(() => rd.targetMailboxId);
   const { confirmDelete } = useConfirmHelpers();
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidation runs in injected invalidate
+  // invalidation runs in injected invalidate
   const migrate = useMutation({
     mutationFn: () =>
       unwrap(
@@ -557,12 +558,12 @@ function RedirectRow({
     onSuccess: () => {
       setMigrateOpen(false);
       invalidate();
-      toast.success("Redirect re-pointed");
+      toast.success("Redirect target changed");
     },
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidation runs in injected invalidate
+  // invalidation runs in injected invalidate
   const remove = useMutation({
     mutationFn: () => unwrap(rpc.admin.redirects[":id"].$delete({ param: { id: rd.id } })),
     onSuccess: () => {
@@ -596,7 +597,7 @@ function RedirectRow({
               setMigrateOpen((v) => !v);
             }}
           >
-            Migrate
+            Change target
           </Button>
           <Button
             variant="outline"
@@ -632,7 +633,7 @@ function RedirectRow({
             onClick={() => migrate.mutate()}
             disabled={target === rd.targetMailboxId || migrate.isPending}
           >
-            Migrate
+            Save
           </Button>
         </div>
       )}
@@ -667,7 +668,7 @@ function AdminMailboxRow({
   const ownerChanged = newOwner !== m.ownerUserId;
   const typeChanged = canRetype && newType !== m.type;
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidation runs in injected invalidate
+  // invalidation runs in injected invalidate
   const migrate = useMutation({
     mutationFn: () =>
       unwrap(
@@ -687,7 +688,7 @@ function AdminMailboxRow({
       invalidate();
       toast.success(
         ownerChanged && typeChanged
-          ? "Mailbox migrated"
+          ? "Owner and type changed"
           : typeChanged
             ? "Type changed"
             : "Owner changed",
@@ -696,7 +697,7 @@ function AdminMailboxRow({
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidation runs in injected invalidate
+  // invalidation runs in injected invalidate
   const remove = useMutation({
     mutationFn: () =>
       unwrap(
@@ -713,7 +714,7 @@ function AdminMailboxRow({
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidation runs in injected invalidate
+  // invalidation runs in injected invalidate
   const empty = useMutation({
     mutationFn: () => unwrap(rpc.admin.mailboxes[":id"].empty.$post({ param: { id: m.id } })),
     onSuccess: () => {
@@ -779,7 +780,7 @@ function AdminMailboxRow({
               setSettingsOpen(false);
             }}
           >
-            Migrate
+            Change owner
           </Button>
           <Button
             variant="outline"
@@ -858,7 +859,7 @@ function AdminMailboxRow({
               onClick={() => migrate.mutate()}
               disabled={(!ownerChanged && !typeChanged) || migrate.isPending}
             >
-              Migrate
+              Save
             </Button>
           </div>
         </div>
@@ -953,10 +954,6 @@ function MembersPanel({ mailboxId }: { mailboxId: string }) {
     queryKey: ["mailbox-members", mailboxId],
     queryFn: () => unwrap(rpc.mailboxes[":id"].members.$get({ param: { id: mailboxId } })),
   });
-  const { data: invitesData } = useQuery({
-    queryKey: ["mailbox-invites", mailboxId],
-    queryFn: () => unwrap(rpc.mailboxes[":id"].invites.$get({ param: { id: mailboxId } })),
-  });
 
   const { data: directoryData, isLoading: directoryLoading } = useQuery({
     queryKey: ["user-directory"],
@@ -970,13 +967,12 @@ function MembersPanel({ mailboxId }: { mailboxId: string }) {
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["mailbox-members", mailboxId] });
-    qc.invalidateQueries({ queryKey: ["mailbox-invites", mailboxId] });
   };
 
   const memberIds = new Set((membersData?.members ?? []).map((m) => m.userId));
   const candidates = (directoryData?.users ?? []).filter((u) => !memberIds.has(u.id));
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidation runs in local invalidate
+  // invalidation runs in local invalidate
   const addMember = useMutation({
     mutationFn: () =>
       unwrap(
@@ -996,17 +992,7 @@ function MembersPanel({ mailboxId }: { mailboxId: string }) {
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidation runs in local invalidate
-  const removeInvite = useMutation({
-    mutationFn: (inviteId: string) =>
-      unwrap(
-        rpc.mailboxes[":id"].invites[":inviteId"].$delete({ param: { id: mailboxId, inviteId } }),
-      ),
-    onSuccess: invalidate,
-    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
-  });
-
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidation runs in local invalidate
+  // invalidation runs in local invalidate
   const updatePerms = useMutation({
     mutationFn: ({ userId, perms }: { userId: string; perms: number }) =>
       unwrap(
@@ -1025,7 +1011,7 @@ function MembersPanel({ mailboxId }: { mailboxId: string }) {
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- invalidation runs in local invalidate
+  // invalidation runs in local invalidate
   const removeMember = useMutation({
     mutationFn: (userId: string) =>
       unwrap(rpc.mailboxes[":id"].members[":userId"].$delete({ param: { id: mailboxId, userId } })),
@@ -1092,45 +1078,11 @@ function MembersPanel({ mailboxId }: { mailboxId: string }) {
             </div>
           </li>
         ))}
-        {membersData?.members.length === 0 &&
-          (!invitesData || invitesData.invites.length === 0) && (
-            <li className="px-3 py-4 text-center text-[11px] text-muted-foreground">
-              No members yet.
-            </li>
-          )}
-        {(invitesData?.invites ?? []).map((inv) => (
-          <li
-            key={inv.id}
-            className="flex items-center justify-between gap-3 px-3 py-2 text-[13px]"
-          >
-            <div className="min-w-0 flex-1 truncate">
-              <div className="truncate font-medium text-muted-foreground">
-                {inv.email} <span className="text-[11px]">(pending)</span>
-              </div>
-              <div className="truncate text-[11px] text-muted-foreground">
-                Invite sent {new Date(inv.createdAt).toLocaleString()} · {permLabel(inv.perms)}
-              </div>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={async () => {
-                if (
-                  await confirm({
-                    title: `Revoke invite for ${inv.email}?`,
-                    description: "The invite stops working immediately.",
-                    confirmLabel: "Revoke",
-                    destructive: true,
-                  })
-                )
-                  removeInvite.mutate(inv.id);
-              }}
-            >
-              Revoke
-            </Button>
+        {membersData?.members.length === 0 && (
+          <li className="px-3 py-4 text-center text-[11px] text-muted-foreground">
+            No members yet.
           </li>
-        ))}
+        )}
       </ul>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -1161,14 +1113,6 @@ function MembersPanel({ mailboxId }: { mailboxId: string }) {
       </div>
     </div>
   );
-}
-
-function permLabel(perms: number): string {
-  const out: string[] = [];
-  if (has(perms, Perm.READ)) out.push("read");
-  if (has(perms, Perm.WRITE)) out.push("write");
-  if (has(perms, Perm.MANAGE)) out.push("manage");
-  return out.length ? out.join(", ") : "no permissions";
 }
 
 function PermToggle({

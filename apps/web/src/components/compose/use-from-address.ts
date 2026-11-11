@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { defaultFromMailboxId } from "@/lib/accounts.ts";
 import type { DraftRow, MailboxSummary, MessageRow } from "@/lib/queries.ts";
 import { plusBase } from "./compose-utils.ts";
 
@@ -7,14 +8,35 @@ interface Options {
   replyTo: MessageRow | null;
   forward: MessageRow | null;
   sendable: MailboxSummary[];
+  /** The account on screen when the composer opened ("all" or none in the unified view). */
+  viewingMailboxId?: string;
 }
 
 // The composer's "From" identity: the sending mailbox plus an optional
 // plus-alias override, including any custom "+tag" aliases typed in compose.
-export function useFromAddress({ draft: d, replyTo: rep, forward: fwd, sendable }: Options) {
-  const [mailboxId, setMailboxId] = useState(
-    d?.mailboxId ?? rep?.mailboxId ?? fwd?.mailboxId ?? sendable[0]?.id ?? "",
-  );
+export function useFromAddress({
+  draft: d,
+  replyTo: rep,
+  forward: fwd,
+  sendable,
+  viewingMailboxId,
+}: Options) {
+  // The account the user chose in the picker, if any. Until then the account
+  // follows the rule in `defaultFromMailboxId`, so it is right even when the
+  // account list arrives after the composer opened. The account on screen is
+  // fixed at open: browsing elsewhere must not change who a half-written
+  // message is from.
+  const [picked, setMailboxId] = useState<string | null>(null);
+  const [viewingAtOpen] = useState(viewingMailboxId);
+  const mailboxId =
+    picked ??
+    defaultFromMailboxId({
+      draftMailboxId: d?.mailboxId,
+      replyMailboxId: rep?.mailboxId,
+      forwardMailboxId: fwd?.mailboxId,
+      viewingMailboxId: viewingAtOpen,
+      accounts: sendable,
+    });
   // Sender override: a plus-alias of the chosen mailbox, or null for its own
   // address. On reply, default to the sub-address the mail was delivered to
   // (hi+tag@) so the answer goes out from the same alias.
@@ -60,6 +82,16 @@ export function useFromAddress({ draft: d, replyTo: rep, forward: fwd, sendable 
     return opts;
   })();
   const currentFrom = fromAddress ?? baseAddr(mailboxId);
+  // The composer fell back to the default sender because nothing pointed at an
+  // account (a new message from All accounts, a folder or the mailto window).
+  // The From row says so, so nobody sends from the wrong project by accident.
+  const isDefaultSender =
+    picked === null &&
+    !d &&
+    !rep &&
+    !fwd &&
+    sendable.length > 1 &&
+    !sendable.some((m) => m.id === viewingAtOpen);
   // Apply the "+tag" typed in the picker as a sub-address of the chosen mailbox.
   const applyPlusTag = () => {
     const base = baseAddr(mailboxId);
@@ -86,6 +118,8 @@ export function useFromAddress({ draft: d, replyTo: rep, forward: fwd, sendable 
     baseAddr,
     fromOptions,
     currentFrom,
+    isDefaultSender,
+    account: sendable.find((m) => m.id === mailboxId),
     plusOpen,
     setPlusOpen,
     plusTag,

@@ -1,8 +1,7 @@
 import { label, message, messageLabel } from "@cfmail/db/schema";
-import { Perm } from "@cfmail/shared/permissions";
+import { has, Perm } from "@cfmail/shared/permissions";
 import type { LabelListDto, MessageLabelsDto, ThreadLabelsDto } from "@cfmail/shared/responses";
 import { createLabel, updateLabel } from "@cfmail/shared/schemas";
-import { zValidator } from "@hono/zod-validator";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -10,8 +9,9 @@ import { dbFromCtx } from "../db.ts";
 import type { AppBindings } from "../env.ts";
 import { wrapUnique } from "../errors.ts";
 import { requireUser } from "../middleware.ts";
-import { requireEntityAccess, requirePerm } from "../permissions.ts";
+import { requireEntityAccess, requirePerm, resolveAccess } from "../permissions.ts";
 import { buildPatch } from "./util.ts";
+import { zValidator } from "./validate.ts";
 
 export function labelsRoutes() {
   const r = new Hono<AppBindings>()
@@ -154,21 +154,10 @@ export function labelsRoutes() {
         .innerJoin(label, eq(label.id, messageLabel.labelId))
         .where(inArray(messageLabel.messageId, ids));
 
-      const uniqueMailboxIds = [...new Set(rows.map((row) => row.mailboxId))];
-      const accessEntries = await Promise.all(
-        uniqueMailboxIds.map(async (mid) => {
-          try {
-            await requirePerm(db, user.id, mid, Perm.READ);
-            return [mid, true] as const;
-          } catch {
-            return [mid, false] as const;
-          }
-        }),
-      );
-      const accessCache = new Map<string, boolean>(accessEntries);
+      const readable = await readableMailboxes(db, user.id, rows);
       const out: Record<string, { id: string; name: string; color: string }[]> = {};
       for (const row of rows) {
-        if (!accessCache.get(row.mailboxId)) continue;
+        if (!readable.has(row.mailboxId)) continue;
         let list = out[row.messageId];
         if (!list) {
           list = [];
@@ -203,21 +192,10 @@ export function labelsRoutes() {
         .innerJoin(label, eq(label.id, messageLabel.labelId))
         .where(inArray(message.threadId, ids));
 
-      const uniqueMailboxIds = [...new Set(rows.map((row) => row.mailboxId))];
-      const accessEntries = await Promise.all(
-        uniqueMailboxIds.map(async (mid) => {
-          try {
-            await requirePerm(db, user.id, mid, Perm.READ);
-            return [mid, true] as const;
-          } catch {
-            return [mid, false] as const;
-          }
-        }),
-      );
-      const accessCache = new Map<string, boolean>(accessEntries);
+      const readable = await readableMailboxes(db, user.id, rows);
       const out: Record<string, { id: string; name: string; color: string }[]> = {};
       for (const row of rows) {
-        if (!accessCache.get(row.mailboxId)) continue;
+        if (!readable.has(row.mailboxId)) continue;
         let list = out[row.threadId];
         if (!list) {
           list = [];
@@ -231,6 +209,19 @@ export function labelsRoutes() {
     });
 
   return r;
+}
+
+// The mailboxes among the rows' that the user may read. A mailbox they may not
+// read is left out; a failed lookup is not a refusal, so it propagates and the
+// request fails instead of losing its labels.
+async function readableMailboxes(
+  db: ReturnType<typeof dbFromCtx>,
+  userId: string,
+  rows: { mailboxId: string }[],
+): Promise<Set<string>> {
+  const ids = [...new Set(rows.map((row) => row.mailboxId))];
+  const access = await Promise.all(ids.map((id) => resolveAccess(db, userId, id)));
+  return new Set(ids.filter((_, i) => has(access[i]?.perms ?? 0, Perm.READ)));
 }
 
 async function loadLabelAndMessage(

@@ -108,7 +108,7 @@ function AcceptInvitePage() {
         Setting up an account for <strong>{invite?.email}</strong>.
       </p>
       <form onSubmit={submit}>
-        <Field label="Name" value={name} onChange={setName} required />
+        <Field label="Your full name" value={name} onChange={setName} required />
         <Field
           label="Password"
           type="password"

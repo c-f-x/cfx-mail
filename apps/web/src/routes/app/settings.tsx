@@ -14,6 +14,7 @@ import { ReadingSection } from "@/components/settings/reading-section.tsx";
 import { SecuritySection } from "@/components/settings/security-section.tsx";
 import { TemplatesSection } from "@/components/settings/templates-section.tsx";
 import { TwoFactorSection } from "@/components/settings/two-factor-section.tsx";
+import { Advanced } from "@/components/settings-ui.tsx";
 import { mailboxesQuery, meQuery } from "@/lib/queries.ts";
 
 export const Route = createFileRoute("/app/settings")({
@@ -28,11 +29,11 @@ const NAV = [
   ["compose", "Compose"],
   ["templates", "Templates"],
   ["security", "Security"],
-  ["imap", "IMAP access"],
   ["notifications", "Notifications"],
   ["folders", "Folders"],
   ["rules", "Rules"],
-  ["mailboxes", "Mailboxes"],
+  ["mailboxes", "Accounts"],
+  ["advanced", "Advanced"],
 ] as const;
 
 function SettingsPage() {
@@ -81,21 +82,20 @@ function SettingsPage() {
           <TemplatesSection />
           <SecuritySection />
           <TwoFactorSection enabled={!!meData?.user?.twoFactorEnabled} />
-          <AppPasswordsSection mailboxes={mailboxesData?.mailboxes ?? []} />
           <NotificationsSection mailboxes={mailboxesData?.mailboxes ?? []} />
           <FoldersSection />
           <RulesSection mailboxes={editable} />
 
           <div id="mailboxes" className="scroll-mt-8 space-y-4">
             <div className="px-0.5">
-              <h2 className="text-[14px] font-semibold tracking-tight">Mailboxes</h2>
+              <h2 className="text-[14px] font-semibold tracking-tight">Accounts</h2>
               <p className="mt-0.5 text-[12px] text-muted-foreground">
-                Identity, spam filtering, and encryption for each mailbox you manage.
+                Identity, spam filtering, and encryption for each account you manage.
               </p>
             </div>
             {editable.length === 0 ? (
               <div className="rounded-lg border bg-card px-5 py-8 text-center text-[13px] text-muted-foreground shadow-sm">
-                No editable mailboxes yet.
+                No accounts you can edit yet.
               </div>
             ) : (
               <div className="space-y-4">
@@ -111,6 +111,14 @@ function SettingsPage() {
             )}
             {importable.length > 0 && <MailboxImportSection mailboxes={importable} />}
           </div>
+
+          <Advanced
+            id="advanced"
+            title="Advanced"
+            description="IMAP access. Present but not in use: mail apps cannot connect to this server yet."
+          >
+            <AppPasswordsSection mailboxes={mailboxesData?.mailboxes ?? []} />
+          </Advanced>
         </div>
       </div>
     </div>

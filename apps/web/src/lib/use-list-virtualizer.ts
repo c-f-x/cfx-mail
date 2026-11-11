@@ -1,5 +1,16 @@
 import { useVirtualizer, type VirtualItem, type Virtualizer } from "@tanstack/react-virtual";
-import { type RefObject, useEffect, useLayoutEffect } from "react";
+import { type CSSProperties, type RefObject, useEffect, useLayoutEffect } from "react";
+
+// Absolute placement for a virtualized row at `start` px down the spacer.
+export function rowStyle(start: number): CSSProperties {
+  return {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: "100%",
+    transform: `translateY(${start}px)`,
+  };
+}
 
 interface Infinite {
   hasMore: boolean;
@@ -33,10 +44,10 @@ export function useListVirtualizer(
   count: number,
   { infinite, cacheKey }: Options = {},
 ): Virtualizer<HTMLElement, Element> {
-  // react-doctor-disable-next-line no-event-handler -- the cached scroll snapshot feeds the virtualizer/paging effects from render state (getVirtualItems), not from a DOM event
+  // the cached scroll snapshot feeds the virtualizer/paging effects from render state (getVirtualItems), not from a DOM event
   const snap = cacheKey ? snapshots.get(cacheKey) : undefined;
 
-  /* eslint-disable react-doctor/no-event-handler -- the virtualizer snapshot onChange and the paging effect derive from scroll/render state (getVirtualItems), not from a DOM event */
+  // the virtualizer snapshot onChange and the paging effect derive from scroll/render state (getVirtualItems), not from a DOM event
   const virtualizer = useVirtualizer({
     count,
     getScrollElement: () => scrollRef.current,
@@ -56,12 +67,12 @@ export function useListVirtualizer(
   // initialOffset only feeds the windowing math; the scroll element itself
   // mounts at 0, so restore its real scrollTop once seeded measurements have
   // given the spacer its correct height.
-  /* eslint-disable react-hooks/exhaustive-deps, react-doctor/exhaustive-deps -- restore once on mount */
+  /* eslint-disable react-hooks/exhaustive-deps -- restore once on mount */
   // biome-ignore lint/correctness/useExhaustiveDependencies: restore once on mount
   useLayoutEffect(() => {
     if (snap && scrollRef.current) scrollRef.current.scrollTop = snap.offset;
   }, []);
-  /* eslint-enable react-hooks/exhaustive-deps, react-doctor/exhaustive-deps */
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   const items = virtualizer.getVirtualItems();
   const lastIndex = items.length ? items[items.length - 1]!.index : -1;
@@ -71,7 +82,6 @@ export function useListVirtualizer(
       infinite.loadMore();
     }
   }, [infinite, lastIndex, count]);
-  /* eslint-enable react-doctor/no-event-handler */
 
   return virtualizer;
 }

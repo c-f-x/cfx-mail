@@ -102,7 +102,8 @@ describe("app passwords API", () => {
     }
     const { res } = await create(asOwner(), { mailboxId: OTHER_MAILBOX_ID, name: "one more" });
     expect(res.status).toBe(409);
-  });
+    // 21 scrypt hashes in a row: about a second idle, past the default 5 s on a busy machine.
+  }, 30_000);
 });
 
 describe("loginWithAppPassword", () => {

@@ -8,13 +8,18 @@
 //   2. The strongest signal is an isolated token — a code alone on its own line
 //      / in its own block — which is how virtually every provider presents it.
 
+import { urlHost } from "./url-host.ts";
+
 export interface DetectedCode {
   code: string;
 }
 
+// The sender's anchor text is deliberately not kept: this link is shown in the
+// app's own banner, where text the sender chose would read as ours. The banner
+// uses a fixed label and the real host instead.
 export interface DetectedLink {
   url: string;
-  label: string;
+  host: string;
 }
 
 export type Carrier = "UPS" | "USPS" | "FedEx" | "DHL";
@@ -121,8 +126,10 @@ function detectMagicLinks(links: { url: string; text: string }[]): DetectedLink[
   const out: DetectedLink[] = [];
   for (const { url, text } of links) {
     if (seen.has(url) || !isMagicLink(url, text)) continue;
+    const host = urlHost(url);
+    if (!host) continue;
     seen.add(url);
-    out.push({ url, label: text && text.length <= 40 ? text : "Sign in" });
+    out.push({ url, host });
     if (out.length >= 2) break;
   }
   return out;

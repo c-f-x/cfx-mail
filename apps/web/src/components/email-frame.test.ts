@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SANDBOX } from "./email-frame.tsx";
+import { FRAME_CSP, PRINT_SANDBOX, SANDBOX } from "./email-frame.tsx";
 
 // Security guard: the email body iframe is same-origin (srcDoc +
 // allow-same-origin, so the parent can measure it and proxied images resolve).
@@ -29,5 +29,20 @@ describe("EmailFrame sandbox", () => {
     expect(new Set(tokens)).toEqual(
       new Set(["allow-same-origin", "allow-popups", "allow-popups-to-escape-sandbox"]),
     );
+  });
+});
+
+// The print frame is the same kind of same-origin srcDoc: it may open the print
+// dialog and nothing else.
+describe("print frame sandbox and CSP", () => {
+  it("grants same-origin and modals only, never scripts", () => {
+    const tokens = PRINT_SANDBOX.split(/\s+/).filter(Boolean);
+    expect(new Set(tokens)).toEqual(new Set(["allow-same-origin", "allow-modals"]));
+  });
+
+  it("shares the reader frame's content policy, which blocks scripts and remote loads", () => {
+    expect(FRAME_CSP).toContain("default-src 'none'");
+    expect(FRAME_CSP).toContain("script-src 'none'");
+    expect(FRAME_CSP).toContain("img-src 'self' data:");
   });
 });

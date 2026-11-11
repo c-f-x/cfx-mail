@@ -59,7 +59,7 @@ export function AddressField({
     for (const ct of contacts) {
       const addr = ct.address.toLowerCase();
       if (used.has(addr)) continue;
-      // eslint-disable-next-line react-doctor/js-set-map-lookups -- substring match on strings; membership already uses the `used` Set.
+      // substring match on strings; membership already uses the `used` Set.
       if (f && !(addr.includes(f) || ct.name?.toLowerCase().includes(f))) continue;
       matches.push(ct);
       if (matches.length >= MAX_SUGGESTIONS) break;
@@ -68,7 +68,7 @@ export function AddressField({
 
   // Highlight cursor resets when the derived filter fragment `f` (from the `value` prop) changes; an arrow-key cursor can't be derived during render.
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset cursor as the typed fragment changes.
-  useEffect(() => setHighlight(0), [f]); // react-doctor-disable-line no-adjust-state-on-prop-change
+  useEffect(() => setHighlight(0), [f]);
 
   const open = focused && matches.length > 0;
   const hi = highlight < matches.length ? highlight : 0;

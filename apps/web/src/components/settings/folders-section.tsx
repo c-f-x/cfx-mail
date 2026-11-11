@@ -108,7 +108,7 @@ function FolderRowEditor({
   onMoveDown: () => void;
   onDelete: () => void;
 }) {
-  // react-doctor-disable-next-line no-derived-useState -- editable draft seeded from the prop; re-seeded via the parent's key remount when the folder name changes
+  // editable draft seeded from the prop; re-seeded via the parent's key remount when the folder name changes
   const [name, setName] = useState(folder.name);
 
   return (

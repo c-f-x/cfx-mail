@@ -23,7 +23,7 @@ const CSP = [
   "img-src 'self' data:",
   "font-src 'self' data:",
   "connect-src 'self'",
-  "frame-src 'self'",
+  "frame-src 'self' blob:",
   "worker-src 'self'",
   "manifest-src 'self'",
   "form-action 'self'",
@@ -33,12 +33,15 @@ const CSP = [
 // The app shell carries no security headers of its own; attach them as the
 // asset response streams back. Headers from `ASSETS.fetch` are immutable, so
 // re-wrap before mutating.
-function withSecurityHeaders(res: Response): Response {
+export function withSecurityHeaders(res: Response): Response {
   const out = new Response(res.body, res);
   out.headers.set("Content-Security-Policy", CSP);
   out.headers.set("X-Content-Type-Options", "nosniff");
   out.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   out.headers.set("X-Frame-Options", "DENY");
+  out.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  out.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  out.headers.set("Cross-Origin-Opener-Policy", "same-origin");
   return out;
 }
 
@@ -61,7 +64,9 @@ export default {
     await handleImapConnection(socket, env);
   },
 
-  async scheduled(_ctrl: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runCron(env, new Date()));
+  // Awaited, not handed to waitUntil: work under waitUntil is cut off about 30 s
+  // after the handler returns, which could fall between a send and its record.
+  async scheduled(_ctrl: ScheduledController, env: Env): Promise<void> {
+    await runCron(env, new Date());
   },
 } satisfies ExportedHandler<Env>;

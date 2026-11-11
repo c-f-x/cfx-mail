@@ -7,15 +7,23 @@ export interface Env {
   EMAIL: SendEmail;
   USER_HUB: DurableObjectNamespace;
   ASSETS: Fetcher;
-  AI: Ai;
+  // Optional Worker secret. First-run setup (POST /api/bootstrap) is locked
+  // until the operator sets it, and it is deleted once the admin exists.
+  SETUP_TOKEN?: string;
+  // Optional Worker secret, at least 32 characters. When set it signs sessions
+  // and image-proxy URLs, and no auth secret is kept in the database (see
+  // getOrCreateAuthSecret). Changing it signs everyone out.
+  AUTH_SECRET?: string;
+  // Optional Worker secrets: the private Cloudflare OAuth client behind "Sign
+  // in with Cloudflare" for admins (auth.ts). Without both, that button is off.
+  CLOUDFLARE_CLIENT_ID?: string;
+  CLOUDFLARE_CLIENT_SECRET?: string;
 }
 
 export interface HonoVars {
   db: DB;
   auth: Auth;
   user: User | null;
-  sessionId: string | null;
-  shareMailboxId: string | null;
   // Set by the bearer-key middleware on /api/svc routes — the mailbox the key
   // unlocks. Never set on session routes.
   serviceMailbox: {

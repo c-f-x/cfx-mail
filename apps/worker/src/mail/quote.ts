@@ -10,8 +10,10 @@ import { Perm } from "@cfmail/shared/permissions";
 import { eq } from "drizzle-orm";
 import type { Env } from "../env.ts";
 import { escapeHtml } from "../lib/encoding.ts";
+import { stripTags } from "../lib/html-strip.ts";
 import { requirePerm } from "../permissions.ts";
 import { parseMime } from "./mime.ts";
+import { sanitizeQuoteHtml } from "./sanitize.ts";
 
 export interface QuoteRef {
   messageId: string;
@@ -60,8 +62,13 @@ export async function buildQuote(
 
   const when = new Date(orig.sentAt ?? orig.receivedAt ?? orig.createdAt).toUTCString();
   const from = orig.fromName ? `${orig.fromName} <${orig.fromAddr}>` : orig.fromAddr;
-  const bodyHtml = origHtml ?? textToHtml(origText ?? "");
-  const bodyText = origText ?? stripHtml(origHtml ?? "");
+  // The original's HTML is sender-written and goes out under the user's name, so
+  // it passes an allowlist first; if that fails, only the text is quoted. A
+  // mail without a text part is quoted as text from the cleaned HTML, so that
+  // what the allowlist removed stays out of both parts.
+  const cleanHtml = origHtml !== null ? await sanitizeQuoteHtml(origHtml) : null;
+  const bodyText = origText ?? stripHtml(cleanHtml ?? origHtml ?? "");
+  const bodyHtml = cleanHtml ?? textToHtml(bodyText);
 
   if (ref.kind === "reply") {
     const intro = `On ${when}, ${from} wrote:`;
@@ -105,8 +112,7 @@ function textToHtml(s: string): string {
 }
 
 function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]+>/g, " ")
+  return stripTags(html, " ")
     .replace(/&nbsp;/g, " ")
     .replace(/\s+/g, " ")
     .trim();

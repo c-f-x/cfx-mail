@@ -1,54 +1,48 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CalendarClock, CalendarX2, Trash2 } from "lucide-react";
-import { type CSSProperties, useRef } from "react";
+import { useRef } from "react";
 import { toast } from "sonner";
+import { accountLine } from "@/lib/accounts.ts";
 import { rpc, unwrap } from "@/lib/api.ts";
 import { cn } from "@/lib/cn.ts";
 import { useDateTimeFmt } from "@/lib/prefs.ts";
-import type { DraftRow, MailView } from "@/lib/queries.ts";
+import { type DraftRow, mailboxesQuery } from "@/lib/queries.ts";
 import { keys } from "@/lib/query-keys.ts";
 import { formatStamp } from "@/lib/time.ts";
-import { useListVirtualizer } from "@/lib/use-list-virtualizer.ts";
+import { rowStyle, useListVirtualizer } from "@/lib/use-list-virtualizer.ts";
 import { openCompose } from "./compose-dock.tsx";
-import { FOLDER_META, MailListHeader } from "./folder-tabs.tsx";
+import { ListHeader } from "./list-header.tsx";
+import { VIEW_META } from "./mail-views.ts";
 import { Button } from "./ui/button.tsx";
 import { useConfirmHelpers } from "./ui/confirm.tsx";
 import { Tooltip, TooltipProvider } from "./ui/tooltip.tsx";
-import { EmptyState, ThreadListSkeleton } from "./ui.tsx";
+import { EmptyState, LoadError, ThreadListSkeleton } from "./ui.tsx";
 
 interface Props {
   mailboxId: string;
-  view: MailView;
-  unread?: boolean;
   drafts: DraftRow[];
   loading?: boolean;
+  error?: unknown;
+  onRetry?: () => void;
   hasMore?: boolean;
   loadingMore?: boolean;
   loadMore?: () => void;
 }
 
-// Absolute placement for a virtualized row at `start` px down the spacer.
-function rowStyle(start: number): CSSProperties {
-  return {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: "100%",
-    transform: `translateY(${start}px)`,
-  };
-}
-
 export function DraftList({
   mailboxId,
-  view,
-  unread,
   drafts,
   loading,
+  error = null,
+  onRetry,
   hasMore = false,
   loadingMore = false,
   loadMore,
 }: Props) {
-  const meta = FOLDER_META.drafts;
+  const meta = VIEW_META.drafts;
+  const { data: mailboxesData } = useQuery(mailboxesQuery);
+  const accounts = mailboxesData?.mailboxes ?? [];
+  const account = accounts.find((m) => m.id === mailboxId);
   const qc = useQueryClient();
   const fmt = useDateTimeFmt();
   const { confirmDelete } = useConfirmHelpers();
@@ -97,16 +91,28 @@ export function DraftList({
   return (
     <TooltipProvider delay={400}>
       <div className="flex h-full flex-col bg-card">
-        <MailListHeader mailboxId={mailboxId} view={view} unread={unread} />
+        <ListHeader
+          title={meta.label}
+          subtitle={account ? account.address : "All accounts"}
+          mono={Boolean(account)}
+        />
         {loading ? (
           <ThreadListSkeleton />
+        ) : error ? (
+          <LoadError error={error} onRetry={() => onRetry?.()} className="m-auto" />
         ) : drafts.length === 0 ? (
           <EmptyState icon={meta.icon} title={meta.empty} className="m-auto" />
         ) : (
-          <div ref={scrollRef} className="flex-1 overflow-y-auto">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto pb-20 md:pb-0">
             <ul className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
               {vItems.map((vi) => {
                 const d = drafts[vi.index]!;
+                const from = accountLine(
+                  { kind: "mailbox", mailboxId },
+                  d.mailboxId,
+                  accounts,
+                  "drafts",
+                );
                 const recipients =
                   d.toAddrs.map((a) => a.name ?? a.address).join(", ") || "(no recipient)";
                 return (
@@ -133,8 +139,13 @@ export function DraftList({
                       <div className="truncate font-medium text-[12px] text-foreground">
                         {d.subject || "(no subject)"}
                       </div>
+                      {from && (
+                        <div className="truncate font-mono text-[11px] text-muted-foreground tracking-normal">
+                          {from}
+                        </div>
+                      )}
                       {d.scheduledFor ? (
-                        <div className="flex items-center gap-1 font-medium text-[11px] text-amber-600 dark:text-amber-500">
+                        <div className="flex items-center gap-1 font-medium text-[11px] text-warning-foreground">
                           <CalendarClock className="h-3 w-3" />
                           Sends {formatStamp(d.scheduledFor, fmt)}
                         </div>

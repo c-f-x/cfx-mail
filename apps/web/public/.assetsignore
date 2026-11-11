@@ -1,0 +1,3 @@
+# Files in apps/web/dist that Wrangler must not upload as public assets
+# (gitignore syntax). Source maps would publish the web app's source.
+*.map

@@ -7,11 +7,14 @@ import {
   message,
   thread,
 } from "@cfmail/db/schema";
-import { Flag, setFlag } from "@cfmail/shared/flags";
+import { Flag, hasFlag, setFlag } from "@cfmail/shared/flags";
 import { Perm } from "@cfmail/shared/permissions";
-import type { MessageBodyDto, SmartReplyDto, TrustSenderDto } from "@cfmail/shared/responses";
+import type {
+  MessageBodyDto,
+  TrustSenderDto,
+  UnsubscribeTargetDto,
+} from "@cfmail/shared/responses";
 import { createBlockRequest, sendMessage } from "@cfmail/shared/schemas";
-import { zValidator } from "@hono/zod-validator";
 import { and, count, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -19,20 +22,11 @@ import { z } from "zod";
 import { getOrCreateAuthSecret, getOrCreatePgpMasterKey } from "../config.ts";
 import { dbFromCtx } from "../db.ts";
 import type { AppBindings } from "../env.ts";
+import { AppError } from "../errors.ts";
 import { broadcastToUsers } from "../hub.ts";
-import { generateSmartReply } from "../mail/ai.ts";
 import { assertOwnedAttachmentKeys } from "../mail/attachment-keys.ts";
 import { collectMessageBlobKeys, deleteBlobs } from "../mail/blobs.ts";
-import { extractCalendar } from "../mail/calendar.ts";
-import {
-  bareCid,
-  MAX_IMAGE_BYTES,
-  proxyRemoteContent,
-  rewriteInlineCids,
-  safeRedirectFetch,
-  verifyProxyUrl,
-} from "../mail/img-proxy.ts";
-import { parseMime } from "../mail/mime.ts";
+import { MAX_IMAGE_BYTES, safeRedirectFetch, verifyProxyUrl } from "../mail/img-proxy.ts";
 import {
   decryptVerify,
   extractPublicKeyBlock,
@@ -41,15 +35,16 @@ import {
   unwrapSecret,
 } from "../mail/pgp.ts";
 import { buildQuote } from "../mail/quote.ts";
-import { sanitizeEmailHtml } from "../mail/sanitize.ts";
 import { sendFromMailbox } from "../mail/send.ts";
 import { recomputeThreadAfterMessageDelete, recomputeThreadUnread } from "../mail/threads.ts";
-import { getTrackerRules, stripTrackers } from "../mail/trackers.ts";
-import { performUnsubscribe } from "../mail/unsubscribe.ts";
+import { performUnsubscribe, resolveUnsubscribe, unsubscribeTarget } from "../mail/unsubscribe.ts";
 import { fetchWkdKey } from "../mail/wkd.ts";
 import { requireUser } from "../middleware.ts";
 import { requireEntityAccess, requirePerm } from "../permissions.ts";
-import { enforceRateLimit } from "../rate-limit.ts";
+import { enforceRateLimit, enforceSendLimit } from "../rate-limit.ts";
+import { attachmentHeaders } from "./attachments.ts";
+import { bodyEtag, etagMatches, REVALIDATE, renderBodies } from "./message-body.ts";
+import { zValidator } from "./validate.ts";
 
 // ASCII-safe, filesystem-safe stem for a downloaded `.eml` (Content-Disposition
 // filename); collapses anything non-alphanumeric to a single dash.
@@ -80,7 +75,7 @@ export function messagesRoutes() {
       const db = dbFromCtx(c);
       const user = c.get("user")!;
       const body = c.req.valid("json");
-      await enforceRateLimit(db, "send", user.id, 60, 60 * 60 * 1000);
+      await enforceSendLimit(db, user.id);
       await requirePerm(db, user.id, body.mailboxId, Perm.WRITE);
       assertOwnedAttachmentKeys(user.id, body.attachments);
       // Reply/forward quoting is resolved server-side from the original raw `.eml`
@@ -129,9 +124,12 @@ export function messagesRoutes() {
       return c.json({ flags });
     })
 
-    // Permanently drop a single message out of its thread (irreversible). Deleting
-    // the row cascades to its attachments via FKs; R2 blobs don't cascade, so
-    // collect and delete them first. When it's the thread's last message the whole
+    // Permanently drop a single message out of its thread (irreversible). Only
+    // mail already in Trash or Spam can go: the message itself was trashed, or
+    // its thread is trashed or filed as spam. Deleting the row cascades to its
+    // attachments via FKs; R2 blobs don't cascade, so their keys are collected
+    // first. The rows go before the blobs: a leftover blob is harmless, a message
+    // without its body is not. When it's the thread's last message the whole
     // (now-empty) thread goes too; otherwise the thread's cached aggregates are
     // reconciled with the survivors.
     .delete("/:id", async (c) => {
@@ -142,8 +140,16 @@ export function messagesRoutes() {
       // Deleting hides mail thread-wide and can't be undone — gate on WRITE.
       const msg = await requireEntityAccess(db, user.id, message, id, Perm.WRITE);
 
+      if (!hasFlag(msg.flags, Flag.TRASH)) {
+        const th = await db.query.thread.findFirst({
+          where: eq(thread.id, msg.threadId),
+          columns: { trashed: true, spam: true },
+        });
+        if (!th?.trashed && !th?.spam)
+          throw new HTTPException(409, { message: "Move it to Trash first." });
+      }
+
       const keys = await collectMessageBlobKeys(db, id);
-      await deleteBlobs(c.env, keys);
 
       const rows = await db
         .select({ c: count() })
@@ -153,13 +159,26 @@ export function messagesRoutes() {
 
       await db.delete(message).where(eq(message.id, id));
 
-      if (remaining <= 0) {
-        await db.delete(thread).where(eq(thread.id, msg.threadId));
-        return c.json({ deleted: true, threadDeleted: true });
-      }
+      const threadDeleted = remaining <= 0;
+      if (threadDeleted) await db.delete(thread).where(eq(thread.id, msg.threadId));
+      else await recomputeThreadAfterMessageDelete(db, msg.threadId);
 
-      await recomputeThreadAfterMessageDelete(db, msg.threadId);
-      return c.json({ deleted: true, threadDeleted: false });
+      await deleteBlobs(c.env, keys);
+      return c.json({ deleted: true, threadDeleted });
+    })
+
+    // Where an unsubscribe would go (one address, or a host), so the client can
+    // name it in a confirm step before anything is sent.
+    .get("/:id/unsubscribe", async (c) => {
+      const db = dbFromCtx(c);
+      const user = c.get("user")!;
+      const id = c.req.param("id");
+      const msg = await requireEntityAccess(db, user.id, message, id, Perm.WRITE);
+      if (msg.direction !== "in" || !msg.listUnsubscribe)
+        throw new HTTPException(400, { message: "no unsubscribe info" });
+      const resolved = resolveUnsubscribe(msg.listUnsubscribe, msg.listUnsubscribePost);
+      if (!resolved.ok) throw new AppError("unprocessable", resolved.message);
+      return c.json(unsubscribeTarget(resolved.plan) satisfies UnsubscribeTargetDto);
     })
 
     // Act on the message's List-Unsubscribe headers (newsletter opt-out). May POST
@@ -168,6 +187,8 @@ export function messagesRoutes() {
       const db = dbFromCtx(c);
       const user = c.get("user")!;
       const id = c.req.param("id");
+      // A mailto goes out under the user's address, so it shares the send budget.
+      await enforceSendLimit(db, user.id);
       // Unsubscribing acts outward on the sender's behalf (sends mail / hits their
       // endpoint), so it needs WRITE — the same bar as sending from the mailbox.
       const msg = await requireEntityAccess(db, user.id, message, id, Perm.WRITE);
@@ -223,93 +244,25 @@ export function messagesRoutes() {
       return c.json({ status: "submitted" }, 201);
     })
 
-    // AI-drafted reply suggestions for an inbound message (best-effort, on-demand).
-    // READ is enough — it only returns text the user may choose to send.
-    .post("/:id/smart-reply", async (c) => {
-      const db = dbFromCtx(c);
-      const user = c.get("user")!;
-      const id = c.req.param("id");
-      const msg = await requireEntityAccess(db, user.id, message, id, Perm.READ);
-      if (msg.direction !== "in")
-        throw new HTTPException(400, { message: "not an inbound message" });
-
-      const mb = await db.query.mailbox.findFirst({
-        where: (m) => eq(m.id, msg.mailboxId),
-        columns: { aiFeatures: true, aiTokenCap: true },
-      });
-      if (!mb?.aiFeatures) throw new HTTPException(403, { message: "AI features are off" });
-
-      const suggestions = await generateSmartReply(
-        c.env,
-        db,
-        msg.mailboxId,
-        mb.aiTokenCap ?? null,
-        {
-          from: msg.fromName ? `${msg.fromName} <${msg.fromAddr}>` : msg.fromAddr,
-          subject: msg.subject,
-          body: msg.bodyText ?? "",
-        },
-      );
-      return c.json({ suggestions } satisfies SmartReplyDto);
-    })
-
-    // Full body, parsed on demand from the raw `.eml`. Listing endpoints only
-    // carry the snippet; this is fetched lazily when a message is opened.
+    // One message's body, parsed on demand from the raw `.eml`. The reader
+    // fetches a thread's bodies through GET /api/threads/:id/bodies; this route
+    // serves a message on its own (the composer's quoted message).
     .get("/:id/body", async (c) => {
       const db = dbFromCtx(c);
       const user = c.get("user")!;
       const id = c.req.param("id");
       const msg = await requireEntityAccess(db, user.id, message, id, Perm.READ);
-      // For decrypted inbound mail the plaintext lives at plainR2Key; the original
-      // ciphertext stays at rawR2Key (served by /:id/raw). Prefer plaintext here.
-      const bodyKey = msg.plainR2Key ?? msg.rawR2Key;
-      if (!bodyKey) throw new HTTPException(404, { message: "not found" });
-      const obj = await c.env.BLOBS.get(bodyKey);
-      if (!obj) throw new HTTPException(404, { message: "blob missing" });
-      const parsed = await parseMime(await obj.arrayBuffer());
-
-      const atts = await db
-        .select({
-          id: attachment.id,
-          filename: attachment.filename,
-          contentType: attachment.contentType,
-          sizeBytes: attachment.sizeBytes,
-          inline: attachment.inline,
-          contentId: attachment.contentId,
-        })
-        .from(attachment)
-        .where(eq(attachment.messageId, id));
-
-      // Remote images are routed through `/proxy-image` so opening a message
-      // never leaks the reader's IP to the sender (tracking pixels); inline `cid:`
-      // images are rewritten to the same-origin attachment route so they render.
-      let html: string | null = null;
-      let trackersBlocked = 0;
-      if (parsed.html) {
-        // Known beacons and invisible pixels are dropped before proxying so the
-        // request is never made at all — the proxy only hides who made it.
-        ({ html, blocked: trackersBlocked } = await stripTrackers(
-          parsed.html,
-          await getTrackerRules(db),
-        ));
-        html = await proxyRemoteContent(html, await getOrCreateAuthSecret(db));
-        const cidMap = new Map(
-          atts.filter((a) => a.contentId).map((a) => [bareCid(a.contentId!), a.id]),
-        );
-        html = await rewriteInlineCids(html, id, cidMap);
-        // Server-side defense-in-depth: strip script-capable elements/attributes
-        // before serving. Best-effort — the client sanitizer stays primary.
-        html = await sanitizeEmailHtml(html);
+      // Access is checked above, so a 304 is only ever sent to someone who may
+      // read the message (see REVALIDATE).
+      const etag = bodyEtag(id);
+      if (etagMatches(c.req.header("if-none-match"), etag)) {
+        return c.body(null, 304, { "Cache-Control": REVALIDATE, ETag: etag });
       }
-      // The raw `.eml` never changes once stored, so the parsed body is immutable.
-      c.header("Cache-Control", "private, max-age=31536000, immutable");
-      return c.json({
-        html,
-        text: parsed.text ?? null,
-        attachments: atts,
-        calendar: extractCalendar(parsed),
-        trackersBlocked,
-      } satisfies MessageBodyDto);
+      const result = (await renderBodies(c.env, db, [msg])).get(id)!;
+      if (!result.ok) throw new HTTPException(404, { message: result.reason });
+      c.header("Cache-Control", REVALIDATE);
+      c.header("ETag", etag);
+      return c.json(result.body satisfies MessageBodyDto);
     })
 
     // Trust an inbound sender's PGP key: extract it from the stored message (an
@@ -396,7 +349,16 @@ export function messagesRoutes() {
             privArmored: await unwrapSecret(masterKey, mb.pgpPrivateKeyWrapped),
             passphrase: await unwrapSecret(masterKey, mb.pgpPassphraseWrapped),
             senderPublicKey: info.publicArmored,
-          }).catch(() => null);
+          }).catch((err: unknown) => {
+            // The key is saved either way; the stored result simply stays as it
+            // was. Log ids and the error text only, never mail content.
+            console.error("pgp trust-sender re-check failed", {
+              messageId: id,
+              mailboxId: msg.mailboxId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            return null;
+          });
           if (res) {
             verify = res.verify;
             signedBy = res.signedBy;
@@ -420,7 +382,7 @@ export function messagesRoutes() {
       const encoded = c.req.query("u");
       const sig = c.req.query("s");
       if (!encoded || !sig) throw new HTTPException(400, { message: "missing params" });
-      const secret = await getOrCreateAuthSecret(db);
+      const secret = await getOrCreateAuthSecret(c.env, db);
       const url = await verifyProxyUrl(secret, encoded, sig);
       if (!url) throw new HTTPException(403, { message: "bad signature" });
 
@@ -488,7 +450,12 @@ export function messagesRoutes() {
       if (!msg.rawR2Key) throw new HTTPException(404, { message: "not found" });
       const obj = await c.env.BLOBS.get(msg.rawR2Key);
       if (!obj) throw new HTTPException(404, { message: "blob missing" });
-      const headers: Record<string, string> = { "content-type": "message/rfc822" };
+      const headers: Record<string, string> = {
+        "content-type": "message/rfc822",
+        "x-content-type-options": "nosniff",
+        "content-security-policy": "default-src 'none'; sandbox",
+        "cache-control": REVALIDATE,
+      };
       // `?download` forces a save (Export) with a subject-derived filename;
       // otherwise the bytes are served inline for in-app viewing.
       if (c.req.query("download") !== undefined) {
@@ -512,20 +479,23 @@ export function messagesRoutes() {
         where: and(eq(attachment.id, attId), eq(attachment.messageId, id)),
       });
       if (!att) throw new HTTPException(404, { message: "not found" });
+
+      // Stored bytes never change, so the ids name the content; see /:id/body for
+      // why this is revalidated instead of cached outright.
+      const etag = `"att-${id}-${attId}"`;
+      const download = c.req.query("download") !== undefined;
+      // The bytes are opaque sender data: shown in place only if they are an image
+      // or PDF the preview uses, otherwise served as a download (see attachmentHeaders).
+      const headers = attachmentHeaders(att.contentType, att.filename, { inline: !download });
+      headers["cache-control"] = REVALIDATE;
+      headers.etag = etag;
+      if (download) headers["content-disposition"] = contentDisposition(att.filename);
+      if (etagMatches(c.req.header("if-none-match"), etag)) {
+        return new Response(null, { status: 304, headers });
+      }
+
       const obj = await c.env.BLOBS.get(att.r2Key);
       if (!obj) throw new HTTPException(404, { message: "blob missing" });
-
-      const headers: Record<string, string> = {
-        "content-type": att.contentType,
-        // The bytes are opaque user data — forbid sniffing them into active content
-        // and deny any sub-resource loads if a viewer ever renders them as a doc.
-        "content-security-policy": "default-src 'none'; sandbox",
-        "x-content-type-options": "nosniff",
-        "cache-control": "private, max-age=31536000, immutable",
-      };
-      if (c.req.query("download") !== undefined) {
-        headers["content-disposition"] = contentDisposition(att.filename);
-      }
       return new Response(obj.body, { headers });
     });
 

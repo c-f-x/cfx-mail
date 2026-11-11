@@ -1,6 +1,10 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "cfmail",
+  // The template. On its own it is the local development and test config. A
+  // real deployment's values (account, Worker name, hostnames, database and
+  // bucket ids) live in the private site file and are joined with this at
+  // deploy time by scripts/site-config.mjs (decision D-16).
+  "name": "cfmail-local",
   "main": "src/index.ts",
   "compatibility_date": "2026-06-23",
   "compatibility_flags": ["nodejs_compat"],
@@ -26,26 +30,24 @@
     "directory": "../web/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    // Every request goes through the Worker. Assets served directly would skip
+    // withSecurityHeaders (src/index.ts), leaving the app's pages without a CSP.
+    "run_worker_first": true
   },
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "cfmail",
-      "database_id": "2d535672-f246-47d8-ba54-ad19d272eb29",
+      "database_name": "cfmail-local",
+      "database_id": "local",
       "migrations_dir": "../../packages/db/drizzle"
     }
   ],
   "r2_buckets": [
     {
       "binding": "BLOBS",
-      "bucket_name": "cfmail-blobs"
+      "bucket_name": "cfmail-local-blobs"
     }
   ],
-  "ai": {
-    "binding": "AI",
-    "remote": true
-  },
   "durable_objects": {
     "bindings": [
       {

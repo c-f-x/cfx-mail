@@ -68,16 +68,18 @@ export function CodeBanner({
             <CodeChip key={c.code} code={c.code} />
           ))}
           {detected.links.map((l) => (
-            <a
-              key={l.url}
-              href={l.url}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 font-medium text-[12px] text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              <LogIn className="size-3.5 shrink-0" />
-              {l.label}
-            </a>
+            <div key={l.url} className="flex items-center gap-2">
+              <a
+                href={l.url}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 font-medium text-[12px] text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <LogIn className="size-3.5 shrink-0" />
+                Open sign-in link
+              </a>
+              <span className="font-mono text-[11px] text-muted-foreground">{l.host}</span>
+            </div>
           ))}
         </div>
       )}

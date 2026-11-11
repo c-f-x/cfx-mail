@@ -1,12 +1,11 @@
-import { domain } from "@cfmail/db/schema";
+import { domain, mailbox } from "@cfmail/db/schema";
 import {
   createDomain,
   setAuthFromAddress,
   setImapSettings,
   updateDomain,
 } from "@cfmail/shared/schemas";
-import { zValidator } from "@hono/zod-validator";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, notExists } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import {
@@ -20,6 +19,7 @@ import { dbFromCtx } from "../db.ts";
 import type { AppBindings } from "../env.ts";
 import { checkDomainHealth } from "../mail/dns.ts";
 import { requireAdmin, requireUser } from "../middleware.ts";
+import { zValidator } from "./validate.ts";
 
 export function domainsRoutes() {
   const r = new Hono<AppBindings>()
@@ -101,8 +101,27 @@ export function domainsRoutes() {
     .delete("/:id", requireAdmin, async (c) => {
       const db = dbFromCtx(c);
       const id = c.req.param("id");
-      const res = await db.delete(domain).where(eq(domain.id, id));
-      if (res.meta.changes === 0) throw new HTTPException(404, { message: "not found" });
+      // Mailboxes cascade from their domain, and a cascade would wipe their mail
+      // in one statement and strand its blobs. Each mailbox has to go through
+      // its own staged purge first; one still being purged counts as present.
+      const res = await db
+        .delete(domain)
+        .where(
+          and(
+            eq(domain.id, id),
+            notExists(
+              db.select({ id: mailbox.id }).from(mailbox).where(eq(mailbox.domainId, domain.id)),
+            ),
+          ),
+        );
+      if (res.meta.changes === 0) {
+        const row = await db.query.domain.findFirst({
+          where: eq(domain.id, id),
+          columns: { id: true },
+        });
+        if (!row) throw new HTTPException(404, { message: "not found" });
+        throw new HTTPException(409, { message: "Delete this domain's mailboxes first." });
+      }
       return c.body(null, 204);
     })
 

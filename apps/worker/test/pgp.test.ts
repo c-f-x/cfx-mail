@@ -1,5 +1,5 @@
 import * as openpgp from "openpgp";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   buildEncryptedMime,
   buildSignedMime,
@@ -261,6 +261,23 @@ describe("buildSignedMime + decryptVerify", () => {
     expect(res.signedBy).toBeTruthy();
   });
 
+  it("carries the extra headers a service send adds, such as List-Unsubscribe", async () => {
+    const mime = await buildSignedMime(
+      headers({
+        extraHeaders: {
+          "List-Unsubscribe": "<https://app.example.org/u?t=1>",
+          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        },
+      }),
+      { text: "Signed hello" },
+      alice.privateArmored,
+      alice.passphrase,
+    );
+    const top = mime.slice(0, mime.indexOf("\r\n\r\n"));
+    expect(top).toContain("\r\nList-Unsubscribe: <https://app.example.org/u?t=1>\r\n");
+    expect(top).toContain("\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n");
+  });
+
   it("reports unknown when the sender key is absent", async () => {
     const mime = await buildSignedMime(
       headers(),
@@ -274,6 +291,29 @@ describe("buildSignedMime + decryptVerify", () => {
       passphrase: alice.passphrase,
     });
     expect(res).toMatchObject({ signed: true, verify: "unknown", signedBy: null });
+  });
+
+  it("reports unknown, and logs it, when the stored sender key cannot be read", async () => {
+    const mime = await buildSignedMime(
+      headers(),
+      { text: "Signed hello" },
+      alice.privateArmored,
+      alice.passphrase,
+    );
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await decryptVerify({
+      rawText: mime,
+      privArmored: alice.privateArmored,
+      passphrase: alice.passphrase,
+      senderPublicKey: "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\ngarbage\n",
+    });
+
+    expect(res).toMatchObject({ signed: true, verify: "unknown" });
+    expect(errors.mock.calls).toEqual([
+      ["pgp_sender_key_unreadable", { error: expect.any(String) }],
+    ]);
+    errors.mockRestore();
   });
 
   it("reports bad when verified against the wrong key", async () => {
@@ -411,4 +451,54 @@ describe("decryptVerify on non-PGP mail", () => {
     });
     expect(res).toMatchObject({ encrypted: true, decryptedRaw: null, verify: "unknown" });
   });
+});
+
+describe("decryptVerify — decompression bomb", () => {
+  // N MiB of zeros compress to a few dozen KiB. Built as a stream so the test
+  // never holds the plaintext; uncapped, openpgp inflates all of it on decrypt.
+  async function bomb(mib: number): Promise<string> {
+    const mebibyte = new Uint8Array(1024 * 1024);
+    let sent = 0;
+    const plaintext = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent++ < mib) controller.enqueue(mebibyte);
+        else controller.close();
+      },
+    });
+    const encrypted = (await openpgp.encrypt({
+      message: await openpgp.createMessage({ binary: plaintext }),
+      encryptionKeys: await openpgp.readKey({ armoredKey: alice.publicArmored }),
+      format: "binary",
+      config: { preferredCompressionAlgorithm: openpgp.enums.compression.zlib },
+    })) as ReadableStream<Uint8Array>;
+    const chunks: Uint8Array[] = [];
+    const reader = encrypted.getReader();
+    for (let r = await reader.read(); !r.done; r = await reader.read()) chunks.push(r.value);
+    const bytes = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+    let at = 0;
+    for (const c of chunks) {
+      bytes.set(c, at);
+      at += c.length;
+    }
+    return openpgp.armor(openpgp.enums.armor.message, bytes);
+  }
+
+  it("refuses a message that inflates past 50 MiB, as an unreadable encrypted mail", async () => {
+    const res = await decryptVerify({
+      rawText: await bomb(60),
+      privArmored: alice.privateArmored,
+      passphrase: alice.passphrase,
+    });
+    expect(res).toMatchObject({ encrypted: true, decryptedRaw: null, verify: "unknown" });
+  }, 60_000);
+
+  it("still decrypts a compressed message under the cap", async () => {
+    const res = await decryptVerify({
+      rawText: await bomb(1),
+      privArmored: alice.privateArmored,
+      passphrase: alice.passphrase,
+    });
+    expect(res.encrypted).toBe(true);
+    expect(res.decryptedRaw?.length).toBe(1024 * 1024);
+  }, 60_000);
 });

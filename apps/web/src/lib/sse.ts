@@ -61,7 +61,6 @@ async function probeSession(): Promise<void> {
 const EVENT_TYPES = [
   "new_message",
   "message_sent",
-  "thread_updated",
   "thread_read",
   "mailbox_read",
   "mailbox_expired",
@@ -110,12 +109,6 @@ export function connectStream(qc: QueryClient, navigate?: Navigate): () => void 
         // clear their own draft client-side).
         qc.invalidateQueries({ queryKey: keys.drafts(evt.mailboxId) });
         qc.invalidateQueries({ queryKey: keys.drafts("all") });
-        break;
-      }
-      case "thread_updated": {
-        // In-place metadata change (e.g. AI summary landed) — refresh the list
-        // and the open thread; no counts or folder membership involved.
-        coalescer.push({ mailboxId: evt.mailboxId, threadId: evt.threadId });
         break;
       }
       case "thread_read": {

@@ -26,6 +26,8 @@ export default defineConfig({
   build: {
     outDir: "dist",
     target: "es2022",
-    sourcemap: true,
+    // Maps are written for local debugging but not referenced from the
+    // bundles, and public/.assetsignore keeps them out of the deployment.
+    sourcemap: "hidden",
   },
 });

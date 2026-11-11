@@ -2,7 +2,6 @@ import { folder, thread, threadFolder } from "@cfmail/db/schema";
 import { Perm } from "@cfmail/shared/permissions";
 import type { FolderDto, FolderListDto, ThreadListDto } from "@cfmail/shared/responses";
 import { createFolder, fileThreads, updateFolder } from "@cfmail/shared/schemas";
-import { zValidator } from "@hono/zod-validator";
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -11,9 +10,10 @@ import type { AppBindings } from "../env.ts";
 import { wrapUnique } from "../errors.ts";
 import { requireUser } from "../middleware.ts";
 import { accessibleMailboxIds, requirePerm } from "../permissions.ts";
-import { cursorBefore, decodeCursor, nextCursor } from "./pagination.ts";
-import { serializeThread } from "./serialize.ts";
+import { cursorBefore, decodeCursor, nextCursor, pageLimit } from "./pagination.ts";
+import { firstMessageSubject, serializeThread } from "./serialize.ts";
 import { buildPatch, typedQuery } from "./util.ts";
+import { zValidator } from "./validate.ts";
 
 function serializeFolder(r: typeof folder.$inferSelect, total: number, unread: number): FolderDto {
   return { ...r, createdAt: r.createdAt.toISOString(), total, unread };
@@ -133,10 +133,12 @@ export function foldersRoutes() {
       if (ids.length === 0)
         return c.json({ threads: [], nextCursor: null } satisfies ThreadListDto);
 
-      const limit = Math.min(Number(c.req.query("limit") ?? 50), 200);
+      const limit = pageLimit(c.req.query("limit"));
       const cursor = decodeCursor(c.req.query("cursor"));
-      const rows = await db
-        .select()
+      const order = [desc(thread.lastMsgAt), desc(thread.id)];
+      // The page is chosen first, so the subject is looked up for its rows only.
+      const page = db
+        .select({ id: thread.id })
         .from(thread)
         .innerJoin(threadFolder, eq(threadFolder.threadId, thread.id))
         .where(
@@ -149,11 +151,16 @@ export function foldersRoutes() {
             cursorBefore(cursor, thread.lastMsgAt, thread.id),
           ),
         )
-        .orderBy(desc(thread.lastMsgAt), desc(thread.id))
+        .orderBy(...order)
         .limit(limit);
+      const rows = await db
+        .select({ thread, subject: firstMessageSubject })
+        .from(thread)
+        .where(inArray(thread.id, page))
+        .orderBy(...order);
 
       return c.json({
-        threads: rows.map((row) => serializeThread(row.thread)),
+        threads: rows.map((row) => serializeThread(row.thread, row.subject)),
         nextCursor: nextCursor(rows, limit, (row) => ({
           ts: row.thread.lastMsgAt,
           id: row.thread.id,

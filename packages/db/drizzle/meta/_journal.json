@@ -288,6 +288,69 @@
       "when": 1790685799989,
       "tag": "0040_polite_micromacro",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1791493317360,
+      "tag": "0041_fresh_maginty",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "6",
+      "when": 1791493634022,
+      "tag": "0042_chemical_lilandra",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1791493856199,
+      "tag": "0043_ambiguous_stryfe",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "6",
+      "when": 1791494153978,
+      "tag": "0044_careful_black_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "6",
+      "when": 1791496723650,
+      "tag": "0045_short_yellow_claw",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "6",
+      "when": 1791497827936,
+      "tag": "0046_overconfident_golden_guardian",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1791546671043,
+      "tag": "0047_hot_bug",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1791632927819,
+      "tag": "0048_optimal_imperial_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "6",
+      "when": 1791635261064,
+      "tag": "0049_wandering_agent_brand",
+      "breakpoints": true
     }
   ]
 }

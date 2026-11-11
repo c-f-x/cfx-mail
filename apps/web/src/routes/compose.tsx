@@ -2,8 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { ComposeForm, type ComposeState } from "@/components/compose-dock.tsx";
+import { signedInUser } from "@/lib/current-user.ts";
 import { parseMailto } from "@/lib/mailto.ts";
-import { draftQuery, meQuery } from "@/lib/queries.ts";
+import { draftQuery } from "@/lib/queries.ts";
 
 interface ComposeSearch {
   // Rehydrate from a server-persisted draft (how the pop-out carries its state).
@@ -25,8 +26,7 @@ export const Route = createFileRoute("/compose")({
     mailto: typeof search.mailto === "string" ? search.mailto : undefined,
   }),
   beforeLoad: async ({ context }) => {
-    const me = await context.queryClient.ensureQueryData(meQuery);
-    if (!me.user) throw redirect({ to: "/login" });
+    if (!(await signedInUser(context.queryClient))) throw redirect({ to: "/login" });
   },
   loaderDeps: ({ search }) => ({ draft: search.draft }),
   loader: ({ context, deps }) =>

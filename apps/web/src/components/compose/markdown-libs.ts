@@ -31,7 +31,7 @@ export function useMarkdownLibs(): MarkdownLibs | null {
   // Preload marked/DOMPurify on mount so preview/send have them ready — a
   // genuine mount-time side effect, not a substitute for an event handler.
   useEffect(() => {
-    // react-doctor-disable-next-line no-event-handler -- no triggering event; preloads a module on mount
+    // no triggering event; preloads a module on mount
     if (!mdLibs) void loadMarkdownLibs().then(setMdLibs);
   }, [mdLibs]);
   return mdLibs;

@@ -1,4 +1,5 @@
 import DOMPurify from "dompurify";
+import { filterSrcset, isAbsoluteUrl, isAllowedMailUrl, neutralizeCssUrls } from "./mail-urls.ts";
 
 // Every link in rendered mail opens in a new tab with the opener severed. The
 // body renders inside a sandboxed, scriptless iframe, so a link must target
@@ -15,7 +16,10 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 
 // Bare URLs/emails that an HTML body left as plain text (no `<a>`) — mirrors
 // linkify.tsx so HTML and plain-text bodies turn the same tokens into anchors.
-const URL_TOKEN = /(https?:\/\/[^\s<]+)|(\bwww\.[^\s<]+)|([^\s<@]+@[^\s<@]+\.[^\s<@]+)/gi;
+// The address alternative is bounded (RFC 5321: local part 64, labels 255): unbounded,
+// 80,000 characters with no "@" took seconds, rescanning from every start.
+const URL_TOKEN =
+  /(https?:\/\/[^\s<]+)|(\bwww\.[^\s<]+)|([^\s<@]{1,64}@[^\s<@]{1,255}\.[^\s<@]{1,255})/gi;
 const TRAILING = /[.,;:!?)\]}>'"]+$/;
 // Don't rewrite text that's already a link or lives in non-prose elements.
 const SKIP_LINKIFY = new Set(["A", "STYLE", "SCRIPT", "TEXTAREA", "NOSCRIPT", "OPTION"]);
@@ -66,6 +70,31 @@ function linkifyFragment(root: DocumentFragment): void {
   }
 }
 
+// Mail may only load what the worker rewrote it to: the image proxy, inline
+// attachments and `data:`. Anything else, relative paths above all, would be a
+// logged-in request to our own API, so it is dropped here. Done on the returned
+// fragment rather than in a DOMPurify hook: the hook registry is shared with the
+// composer's markdown sanitizing, whose remote images are the author's own.
+function restrictUrls(root: DocumentFragment): void {
+  for (const el of root.querySelectorAll("*")) {
+    for (const name of ["src", "background"]) {
+      const value = el.getAttribute(name);
+      if (value !== null && !isAllowedMailUrl(value)) el.removeAttribute(name);
+    }
+    const srcset = el.getAttribute("srcset");
+    if (srcset !== null) {
+      const kept = filterSrcset(srcset);
+      if (kept) el.setAttribute("srcset", kept);
+      else el.removeAttribute("srcset");
+    }
+    const href = el.getAttribute("href");
+    if (href !== null && !isAbsoluteUrl(href)) el.removeAttribute("href");
+    const style = el.getAttribute("style");
+    if (style !== null) el.setAttribute("style", neutralizeCssUrls(style));
+    if (el.tagName === "STYLE") el.textContent = neutralizeCssUrls(el.textContent ?? "");
+  }
+}
+
 // Sanitizes an email HTML body for rendering. The worker has already rewritten
 // every remote-content vector (`<img>`, `background`, CSS `url(…)`) to the
 // signed same-origin proxy, so the only job left here is to strip anything that
@@ -103,6 +132,7 @@ export function sanitizeEmailHtml(html: string): string {
     FORBID_ATTR: ["ping", "formaction", "srcdoc"],
     RETURN_DOM_FRAGMENT: true,
   });
+  restrictUrls(frag);
   linkifyFragment(frag);
   const holder = document.createElement("div");
   holder.append(frag);

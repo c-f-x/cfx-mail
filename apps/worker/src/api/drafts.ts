@@ -1,18 +1,19 @@
 import { draft } from "@cfmail/db/schema";
 import { Perm } from "@cfmail/shared/permissions";
 import { createDraft, scheduleDraft, updateDraft } from "@cfmail/shared/schemas";
-import { zValidator } from "@hono/zod-validator";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { dbFromCtx } from "../db.ts";
 import type { AppBindings } from "../env.ts";
 import { assertOwnedAttachmentKeys } from "../mail/attachment-keys.ts";
+import { isOwnDraftUpload } from "../mail/blob-keys.ts";
 import { requireUser } from "../middleware.ts";
 import { ALL_MAILBOXES, accessibleMailboxIds, requirePerm } from "../permissions.ts";
-import { cursorBefore, decodeCursor, nextCursor } from "./pagination.ts";
+import { cursorBefore, decodeCursor, nextCursor, pageLimit } from "./pagination.ts";
 import { serializeDraft } from "./serialize.ts";
 import { buildPatch } from "./util.ts";
+import { zValidator } from "./validate.ts";
 
 export function draftsRoutes() {
   const r = new Hono<AppBindings>()
@@ -38,7 +39,7 @@ export function draftsRoutes() {
         scope = and(eq(draft.mailboxId, mailboxId), eq(draft.userId, user.id));
       }
 
-      const limit = Math.min(Number(c.req.query("limit") ?? 50), 200);
+      const limit = pageLimit(c.req.query("limit"));
       const cursor = decodeCursor(c.req.query("cursor"));
       const rows = await db
         .select()
@@ -189,10 +190,9 @@ export function draftsRoutes() {
       // Best-effort cleanup of orphaned draft attachment blobs in R2. Only touch
       // keys in the caller's own upload namespace — never delete other tenants'
       // blobs, even if a stale row somehow holds a foreign key.
-      const prefix = `draft/${user.id}/`;
       await Promise.all(
         (row.attachments ?? [])
-          .filter((a) => a.r2Key.startsWith(prefix))
+          .filter((a) => isOwnDraftUpload(user.id, a.r2Key))
           .map((a) => c.env.BLOBS.delete(a.r2Key)),
       );
       await db.delete(draft).where(eq(draft.id, id));

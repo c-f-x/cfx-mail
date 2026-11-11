@@ -1,11 +1,9 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArchiveRestore,
   EllipsisVertical,
-  Flag,
   Inbox,
-  ListFilter,
   Loader2,
   Mail,
   MailOpen,
@@ -16,23 +14,27 @@ import {
 } from "lucide-react";
 import { type CSSProperties, useRef, useState } from "react";
 import { toast } from "sonner";
+import { ALL_MAILBOXES, accountLine } from "@/lib/accounts.ts";
 import { rpc, unwrap } from "@/lib/api.ts";
 import { cn } from "@/lib/cn.ts";
 import { markListRead, patchThreadsInLists, removeThreadsFromLists } from "@/lib/invalidate.ts";
 import {
   listSearch,
+  type MailboxSummary,
   type MailView,
   type MessageLabel,
+  mailboxesQuery,
   type ThreadRow,
   threadLabelsQuery,
 } from "@/lib/queries.ts";
 import { keys } from "@/lib/query-keys.ts";
 import { useThreadListMutation } from "@/lib/thread-mutations.ts";
 import { formatRemaining, useNow } from "@/lib/time.ts";
-import { useListVirtualizer, visibleBlock } from "@/lib/use-list-virtualizer.ts";
+import { rowStyle, useListVirtualizer, visibleBlock } from "@/lib/use-list-virtualizer.ts";
 import { usePullToRefresh } from "@/lib/use-pull-to-refresh.ts";
-import { FOLDER_META, MailListHeader } from "./folder-tabs.tsx";
 import { BulkLabelsMenu } from "./labels-menu.tsx";
+import { ListHeader } from "./list-header.tsx";
+import { VIEW_META } from "./mail-views.ts";
 import { MoveToFolderMenu } from "./move-to-folder-menu.tsx";
 import { ThreadActionSheet } from "./thread-action-sheet.tsx";
 import {
@@ -52,8 +54,8 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu.tsx";
 import { IconButton } from "./ui/icon-button.tsx";
-import { Tooltip, TooltipProvider } from "./ui/tooltip.tsx";
-import { EmptyState, ThreadListSkeleton } from "./ui.tsx";
+import { TooltipProvider } from "./ui/tooltip.tsx";
+import { EmptyState, LoadError, ThreadListSkeleton } from "./ui.tsx";
 
 interface Props {
   mailboxId: string;
@@ -62,8 +64,9 @@ interface Props {
   unread?: boolean;
   threads: ThreadRow[];
   loading?: boolean;
+  error?: unknown;
+  onRetry?: () => void;
   selectedThreadId?: string;
-  expiresAt?: string | null;
   hasMore?: boolean;
   loadingMore?: boolean;
   loadMore?: () => void;
@@ -75,13 +78,18 @@ export function ThreadList({
   unread = false,
   threads,
   loading,
+  error = null,
+  onRetry,
   selectedThreadId,
-  expiresAt,
   hasMore = false,
   loadingMore = false,
   loadMore,
 }: Props) {
-  const meta = FOLDER_META[view];
+  const meta = VIEW_META[view];
+  const { data: mailboxesData } = useQuery(mailboxesQuery);
+  const accounts = mailboxesData?.mailboxes ?? [];
+  const account = accounts.find((m) => m.id === mailboxId);
+  const scope = { kind: "mailbox", mailboxId } as const;
   const { confirmDelete } = useConfirmHelpers();
   const queryClient = useQueryClient();
   const nav = useNavigate();
@@ -203,125 +211,120 @@ export function ThreadList({
   return (
     <TooltipProvider delay={400}>
       <div className="flex h-full flex-col bg-card">
-        {selecting ? (
-          <div className="flex h-11 shrink-0 items-center gap-1 border-b bg-accent/50 px-2">
-            <IconButton
-              icon={X}
-              label="Clear selection"
-              size="icon-sm"
-              onClick={() => setSelected(new Set())}
-            />
-            <span className="font-medium text-[12px]">{selected.size} selected</span>
-            <div className="ml-auto flex items-center gap-0.5">
-              {view === "trash" ? (
-                <>
-                  <IconButton
-                    icon={Inbox}
-                    label="Restore"
-                    size="icon-sm"
-                    disabled={bulk.isPending}
-                    onClick={() => bulkPatch({ trashed: false })}
-                  />
-                  <IconButton
-                    icon={Trash2}
-                    label="Delete permanently"
-                    size="icon-sm"
-                    disabled={bulkDel.isPending}
-                    onClick={deleteSelected}
-                  />
-                </>
-              ) : (
-                <>
-                  <IconButton
-                    icon={MailOpen}
-                    label="Mark as read"
-                    size="icon-sm"
-                    disabled={bulkRead.isPending}
-                    onClick={() => bulkSetRead(true)}
-                  />
-                  <IconButton
-                    icon={Mail}
-                    label="Mark as unread"
-                    size="icon-sm"
-                    disabled={bulkRead.isPending}
-                    onClick={() => bulkSetRead(false)}
-                  />
-                  <BulkLabelsMenu mailboxId={mailboxId} threadIds={[...selected]} size="icon-sm" />
-                  <MoveToFolderMenu
-                    mailboxId={mailboxId}
-                    threadIds={[...selected]}
-                    size="icon-sm"
-                    onMoved={(folderName) => {
-                      toast.success(`Moved to ${folderName}`);
-                      setSelected(new Set());
-                    }}
-                  />
-                  {view === "spam" ? (
-                    <IconButton
-                      icon={Inbox}
-                      label="Not spam"
-                      size="icon-sm"
-                      disabled={bulk.isPending}
-                      onClick={() => bulkPatch({ spam: false })}
-                    />
+        <ListHeader
+          title={meta.label}
+          subtitle={account ? account.address : "All accounts"}
+          mono={Boolean(account)}
+          unread={unread}
+          onUnreadChange={setUnread}
+          band={
+            selecting ? (
+              <div className="flex h-12 shrink-0 items-center gap-1 border-b bg-primary/5 px-2">
+                <IconButton
+                  icon={X}
+                  label="Clear selection"
+                  size="icon-sm"
+                  onClick={() => setSelected(new Set())}
+                />
+                <span className="font-medium text-[12px]">{selected.size} selected</span>
+                <div className="ml-auto flex items-center gap-0.5">
+                  {view === "trash" ? (
+                    <>
+                      <IconButton
+                        icon={Inbox}
+                        label="Restore"
+                        size="icon-sm"
+                        disabled={bulk.isPending}
+                        onClick={() => bulkPatch({ trashed: false })}
+                      />
+                      <IconButton
+                        icon={Trash2}
+                        label="Delete permanently"
+                        size="icon-sm"
+                        disabled={bulkDel.isPending}
+                        onClick={deleteSelected}
+                      />
+                    </>
                   ) : (
-                    <IconButton
-                      icon={ShieldAlert}
-                      label="Mark as spam"
-                      size="icon-sm"
-                      disabled={bulk.isPending}
-                      onClick={() => bulkPatch({ spam: true })}
-                    />
+                    <>
+                      <IconButton
+                        icon={MailOpen}
+                        label="Mark as read"
+                        size="icon-sm"
+                        disabled={bulkRead.isPending}
+                        onClick={() => bulkSetRead(true)}
+                      />
+                      <IconButton
+                        icon={Mail}
+                        label="Mark as unread"
+                        size="icon-sm"
+                        disabled={bulkRead.isPending}
+                        onClick={() => bulkSetRead(false)}
+                      />
+                      <BulkLabelsMenu
+                        mailboxId={mailboxId}
+                        threadIds={[...selected]}
+                        size="icon-sm"
+                      />
+                      <MoveToFolderMenu
+                        mailboxId={mailboxId}
+                        threadIds={[...selected]}
+                        size="icon-sm"
+                        onMoved={(folderName) => {
+                          toast.success(`Moved to ${folderName}`);
+                          setSelected(new Set());
+                        }}
+                      />
+                      {view === "spam" ? (
+                        <IconButton
+                          icon={Inbox}
+                          label="Not spam"
+                          size="icon-sm"
+                          disabled={bulk.isPending}
+                          onClick={() => bulkPatch({ spam: false })}
+                        />
+                      ) : (
+                        <IconButton
+                          icon={ShieldAlert}
+                          label="Mark as spam"
+                          size="icon-sm"
+                          disabled={bulk.isPending}
+                          onClick={() => bulkPatch({ spam: true })}
+                        />
+                      )}
+                      <IconButton
+                        icon={Trash2}
+                        label="Trash"
+                        size="icon-sm"
+                        disabled={bulk.isPending}
+                        onClick={() => bulkPatch({ trashed: true })}
+                      />
+                    </>
                   )}
-                  <IconButton
-                    icon={Trash2}
-                    label="Trash"
-                    size="icon-sm"
-                    disabled={bulk.isPending}
-                    onClick={() => bulkPatch({ trashed: true })}
-                  />
-                </>
-              )}
-            </div>
-          </div>
-        ) : (
-          <MailListHeader
-            mailboxId={mailboxId}
-            view={view}
-            unread={unread}
-            actions={
-              <>
-                <Tooltip label={unread ? "Show all conversations" : "Show unread only"}>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Unread only"
-                    aria-pressed={unread}
-                    className={cn(
-                      unread && "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary",
-                    )}
-                    onClick={() => setUnread(!unread)}
-                  >
-                    <ListFilter />
-                  </Button>
-                </Tooltip>
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={<IconButton icon={EllipsisVertical} label="More" size="icon-sm" />}
-                  />
-                  <DropdownMenuContent>
-                    <DropdownMenuItem disabled={readAll.isPending} onClick={markAllRead}>
-                      <MailOpen /> Mark all in {meta.label} as read
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </>
-            }
-          />
-        )}
-        {expiresAt && <ExpiryBanner expiresAt={expiresAt} />}
+                </div>
+              </div>
+            ) : undefined
+          }
+          actions={
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={<IconButton icon={EllipsisVertical} label="More" size="icon-sm" />}
+                />
+                <DropdownMenuContent>
+                  <DropdownMenuItem disabled={readAll.isPending} onClick={markAllRead}>
+                    <MailOpen /> Mark all in {meta.label} as read
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          }
+        />
+        {account?.expiresAt && <TempBanner account={account} />}
         {loading ? (
           <ThreadListSkeleton />
+        ) : error ? (
+          <LoadError error={error} onRetry={() => onRetry?.()} className="m-auto" />
         ) : threads.length === 0 ? (
           unread ? (
             <EmptyState
@@ -338,7 +341,7 @@ export function ThreadList({
             <EmptyState icon={meta.icon} title={meta.empty} className="m-auto" />
           )
         ) : (
-          <div ref={scrollRef} className="relative flex-1 overflow-y-auto">
+          <div ref={scrollRef} className="relative flex-1 overflow-y-auto pb-20 md:pb-0">
             {(pull.distance > 0 || pull.refreshing) && (
               <div
                 className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center"
@@ -372,6 +375,7 @@ export function ThreadList({
                     unread={unread}
                     thread={t}
                     labels={labelsByThread?.[t.id]}
+                    account={accountLine(scope, t.mailboxId, accounts, view)}
                     active={t.id === selectedThreadId}
                     selected={selected.has(t.id)}
                     selecting={selecting}
@@ -393,23 +397,13 @@ export function ThreadList({
   );
 }
 
-// Absolute placement for a virtualized row at `start` px down the spacer.
-function rowStyle(start: number): CSSProperties {
-  return {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: "100%",
-    transform: `translateY(${start}px)`,
-  };
-}
-
 function ThreadRowItem({
   mailboxId,
   view,
   unread: unreadOnly,
   thread,
   labels,
+  account,
   active,
   selected,
   selecting,
@@ -425,6 +419,7 @@ function ThreadRowItem({
   unread: boolean;
   thread: ThreadRow;
   labels?: MessageLabel[];
+  account: string | null;
   active: boolean;
   selected: boolean;
   selecting: boolean;
@@ -496,7 +491,12 @@ function ThreadRowItem({
         left:
           view === "trash"
             ? thread.trashed
-              ? { icon: Trash2, label: "Delete", className: "bg-destructive", onCommit: remove }
+              ? {
+                  icon: Trash2,
+                  label: "Delete",
+                  className: "bg-destructive",
+                  onCommit: () => void remove(),
+                }
               : undefined
             : {
                 icon: Trash2,
@@ -526,7 +526,7 @@ function ThreadRowItem({
         label: "Delete permanently",
         variant: "destructive",
         separatorBefore: true,
-        onClick: remove,
+        onClick: () => void remove(),
       });
     }
   } else {
@@ -535,13 +535,6 @@ function ThreadRowItem({
       label: view === "spam" ? "Not spam" : "Mark as spam",
       onClick: () => patch.mutate({ spam: view !== "spam" }),
     });
-    if (view !== "spam") {
-      menuActions.push({
-        icon: Flag,
-        label: "Report",
-        onClick: () => patch.mutate({ spam: true }),
-      });
-    }
     menuActions.push({
       icon: Trash2,
       label: "Trash",
@@ -588,6 +581,7 @@ function ThreadRowItem({
           active={active}
           selected={selected}
           labels={labels}
+          account={account}
           rowRef={rowRef}
           remeasure={remeasure}
           style={style}
@@ -648,21 +642,61 @@ function ThreadRowItem({
   );
 }
 
-function ExpiryBanner({ expiresAt }: { expiresAt: string }) {
+// A temporary account: how long it has left, and (for its owner) delete now.
+function TempBanner({ account }: { account: MailboxSummary }) {
   useNow(60_000);
-  const remaining = formatRemaining(expiresAt);
+  const qc = useQueryClient();
+  const nav = useNavigate();
+  const { confirmDelete } = useConfirmHelpers();
+  const remove = useMutation({
+    mutationFn: () => unwrap(rpc.mailboxes[":id"].$delete({ param: { id: account.id } })),
+    onSuccess: () => {
+      qc.setQueryData<{ mailboxes: MailboxSummary[] }>(mailboxesQuery.queryKey, (old) =>
+        old ? { mailboxes: old.mailboxes.filter((m) => m.id !== account.id) } : old,
+      );
+      nav({
+        to: "/app/m/$mailboxId",
+        params: { mailboxId: ALL_MAILBOXES },
+        search: { view: "inbox" },
+      });
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed to delete"),
+  });
+  const remaining = account.expiresAt ? formatRemaining(account.expiresAt) : null;
   if (!remaining) return null;
   const expired = remaining === "expired";
   return (
     <div
       className={cn(
-        "flex items-center gap-2 border-b px-4 py-1.5 text-[11px]",
+        "flex h-8 shrink-0 items-center gap-2 border-b px-4 text-[11px]",
         expired ? "bg-destructive/10 text-destructive" : "bg-warning/15 text-warning-foreground",
       )}
-      title={`Expires ${new Date(expiresAt).toLocaleString()}`}
+      title={
+        account.expiresAt ? `Expires ${new Date(account.expiresAt).toLocaleString()}` : undefined
+      }
     >
-      <Timer className="h-3 w-3" />
-      <span>{expired ? "Mailbox expired" : `Temp mailbox · expires in ${remaining}`}</span>
+      <Timer className="h-3 w-3 shrink-0" />
+      <span className="flex-1 truncate">
+        {expired ? "Temporary account expired" : `Temporary account · expires in ${remaining}`}
+      </span>
+      {account.role === "owner" && (
+        <button
+          type="button"
+          disabled={remove.isPending}
+          onClick={async () => {
+            if (
+              await confirmDelete(
+                "temporary account",
+                `${account.address} and all its mail will be permanently deleted.`,
+              )
+            )
+              remove.mutate();
+          }}
+          className="shrink-0 rounded px-1.5 py-0.5 font-medium underline-offset-2 hover:underline disabled:opacity-50"
+        >
+          Delete now
+        </button>
+      )}
     </div>
   );
 }

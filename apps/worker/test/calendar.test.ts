@@ -120,6 +120,52 @@ describe("parseICalendar", () => {
     expect(event?.meetingUrl).toBe("https://example.zoom.us/j/123456789?pwd=abc");
   });
 
+  it.each([
+    "https://evil.example/zoom.us/j/1",
+    "https://zoom.us.evil.example/j/1",
+    "https://evil.example/?next=meet.google.com",
+    "https://evilzoom.us/j/1",
+    "https://user@evil.example/zoom.us",
+    "http://zoom.us/j/1",
+  ])("does not offer %s as a meeting link", (url) => {
+    const event = parseICalendar(
+      ics([
+        "BEGIN:VEVENT",
+        "SUMMARY:Sync",
+        "DTSTART:20260101T090000Z",
+        `LOCATION:${url}`,
+        "END:VEVENT",
+      ]),
+    );
+    expect(event?.meetingUrl).toBeNull();
+  });
+
+  it("skips a look-alike and returns the real provider link that follows", () => {
+    const event = parseICalendar(
+      ics([
+        "BEGIN:VEVENT",
+        "SUMMARY:Sync",
+        "DTSTART:20260101T090000Z",
+        "DESCRIPTION:See https://evil.example/zoom.us/j/1 or https://us02web.zoom.us/j/42.",
+        "END:VEVENT",
+      ]),
+    );
+    expect(event?.meetingUrl).toBe("https://us02web.zoom.us/j/42");
+  });
+
+  it("accepts the bare provider host", () => {
+    const event = parseICalendar(
+      ics([
+        "BEGIN:VEVENT",
+        "SUMMARY:Sync",
+        "DTSTART:20260101T090000Z",
+        "LOCATION:https://zoom.us/j/1",
+        "END:VEVENT",
+      ]),
+    );
+    expect(event?.meetingUrl).toBe("https://zoom.us/j/1");
+  });
+
   it("leaves meetingUrl null for a plain location", () => {
     const event = parseICalendar(
       ics([

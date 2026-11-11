@@ -8,8 +8,6 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import {
-  AI_CATEGORIES,
-  AI_PRIORITIES,
   BLOCK_ENTRY_TYPES,
   BLOCK_REQUEST_STATUS,
   CONTACT_KEY_SOURCES,
@@ -265,24 +263,15 @@ export const mailbox = sqliteTable(
     signature: text("signature"),
     replyTo: text("reply_to"),
     // Spam filtering level: off | auth (SPF/DKIM/DMARC only) | standard (auth +
-    // heuristics + DNSBL) | ai (standard + Workers AI on the gray zone).
+    // heuristics + DNSBL).
     spamFilter: text("spam_filter", { enum: SPAM_FILTER_LEVELS }).notNull().default("standard"),
-    // Monthly Workers AI token budget for spam classification; null = unlimited.
-    // When exceeded, the ai level silently falls back to standard.
-    spamAiTokenCap: integer("spam_ai_token_cap"),
-    // Reader AI features (summary + category on inbound, smart reply, thread
-    // summarize). Off by default; gated separately from spam so spend is opt-in.
-    aiFeatures: integer("ai_features", { mode: "boolean" }).notNull().default(false),
-    // Monthly Workers AI token budget for the reader features; null = unlimited.
-    // When exceeded the features silently no-op (mail still delivers, ivt 8).
-    aiTokenCap: integer("ai_token_cap"),
     // service mailboxes only — SHA-256 (hex) of the bearer API key. Null until a
     // key is issued; rotating replaces it (single key, instant cutover).
     serviceKeyHash: text("service_key_hash"),
     // service mailboxes only — "duplex" accepts inbound (poll via API);
     // "send" rejects inbound with a hard bounce. Ignored for other types.
     serviceMode: text("service_mode", { enum: SERVICE_MODES }).notNull().default("duplex"),
-    // Gateway PGP policy (invariant 17): off | sign outbound | sign + encrypt.
+    // Gateway PGP policy (invariant 7): off | sign outbound | sign + encrypt.
     // The keypair below is held server-side; private key + passphrase are wrapped
     // at rest with the pgp_master_key (config.ts) and never returned via the API.
     pgpMode: text("pgp_mode", { enum: PGP_MODES }).notNull().default("off"),
@@ -308,6 +297,10 @@ export const mailbox = sqliteTable(
     // is hidden from listings + receive routing and left out of the address
     // index, so its address frees at once and can be re-created while it drains.
     pendingPurge: text("pending_purge", { enum: ["empty", "delete"] }),
+    // When the pending purge was requested. An "empty" keeps threads with mail
+    // from this second on: the mailbox still receives while it drains, and that
+    // mail was never part of what the admin asked to remove.
+    purgeStartedAt: integer("purge_started_at", { mode: "timestamp" }),
     createdAt: createdAt(),
   },
   (t) => [
@@ -406,16 +399,14 @@ export const thread = sqliteTable(
       .notNull()
       .default(sql`'[]'`),
     unreadCount: integer("unread_count").notNull().default(0),
-    // AI summary/category of the latest inbound message, denormalized here so the
-    // list query needs no join. Null until the best-effort AI job fills them in.
-    aiSummary: text("ai_summary"),
-    aiCategory: text("ai_category", { enum: AI_CATEGORIES }),
-    aiPriority: text("ai_priority", { enum: AI_PRIORITIES }),
     trashed: integer("trashed", { mode: "boolean" }).notNull().default(false),
     // When the thread entered the trash; null unless trashed. The cron purges
     // threads trashed longer than the retention window.
     trashedAt: integer("trashed_at", { mode: "timestamp" }),
     spam: integer("spam", { mode: "boolean" }).notNull().default(false),
+    // The List-Id of the message that started the thread, for list mail. A
+    // reply through the same list may join without having written before.
+    listId: text("list_id"),
   },
   (t) => [
     index("thread_mailbox_last_idx").on(t.mailboxId, t.lastMsgAt),
@@ -455,12 +446,6 @@ export const message = sqliteTable(
     // Full plaintext body (HTML normalized to text), capped, for FTS body search.
     // Null on pre-migration rows; the raw message always lives in R2.
     bodyText: text("body_text"),
-    // Best-effort Workers AI insights (inbound only; null until the job runs or
-    // when AI features are off). `aiSummary` is a one-line gist for the list;
-    // `aiCategory` is the auto-category chip.
-    aiSummary: text("ai_summary"),
-    aiCategory: text("ai_category", { enum: AI_CATEGORIES }),
-    aiPriority: text("ai_priority", { enum: AI_PRIORITIES }),
     // Recipient names+addresses concatenated, so search matches To/Cc too.
     toText: text("to_text"),
     flags: integer("flags").notNull().default(0),
@@ -486,7 +471,7 @@ export const message = sqliteTable(
     // the sender as supporting one-click POST unsubscribe.
     listUnsubscribe: text("list_unsubscribe"),
     listUnsubscribePost: text("list_unsubscribe_post"),
-    // Gateway PGP (invariant 17). Inbound: whether the message arrived encrypted/
+    // Gateway PGP (invariant 7). Inbound: whether the message arrived encrypted/
     // signed and the signature outcome (verify/signedBy). Outbound: whether we
     // signed/encrypted it. `plainR2Key` points at the decrypted .eml for inbound
     // encrypted mail — the body endpoint reads it so the reader shows plaintext
@@ -507,6 +492,19 @@ export const message = sqliteTable(
     index("message_mailbox_created_idx").on(t.mailboxId, t.createdAt),
     index("message_thread_idx").on(t.threadId),
     index("message_msgid_idx").on(t.messageIdHdr),
+    // One stored copy per delivery of a message to an address: what makes the
+    // inbound duplicate guard hold when two copies arrive at the same instant.
+    uniqueIndex("message_inbound_delivery_uq")
+      .on(t.mailboxId, t.messageIdHdr, t.deliveredTo)
+      .where(
+        sql`${t.direction} = 'in' AND ${t.messageIdHdr} IS NOT NULL AND ${t.deliveredTo} IS NOT NULL`,
+      ),
+    // One stored copy of each message a mailbox sent. Sending makes a fresh
+    // Message-ID every time, so only two imports of one sent message, arriving
+    // together, could collide here.
+    uniqueIndex("message_outbound_uq")
+      .on(t.mailboxId, t.messageIdHdr)
+      .where(sql`${t.direction} = 'out' AND ${t.messageIdHdr} IS NOT NULL`),
   ],
 );
 
@@ -526,47 +524,6 @@ export const attachment = sqliteTable(
   },
   (t) => [index("attachment_message_idx").on(t.messageId)],
 );
-
-// Cached AI catch-up summary for a thread (on-demand). Kept in its own table so
-// the bullets don't bloat every thread-list row. `msgCount` is the thread's
-// message count when generated; the endpoint regenerates when it no longer
-// matches (i.e. a message was added or removed), so an unchanged thread reuses
-// the cached bullets instead of paying for the model again.
-export const threadSummary = sqliteTable("thread_summary", {
-  threadId: text("thread_id")
-    .primaryKey()
-    .references(() => thread.id, { onDelete: "cascade" }),
-  bullets: text("bullets", { mode: "json" }).$type<string[]>().notNull(),
-  msgCount: integer("msg_count").notNull(),
-  updatedAt: updatedAt(),
-});
-
-// Cumulative Workers AI spam-classification usage per mailbox. `period`
-// (YYYY-MM) lets the monthly cap reset without deleting rows.
-export const mailboxSpamUsage = sqliteTable("mailbox_spam_usage", {
-  mailboxId: text("mailbox_id")
-    .primaryKey()
-    .references(() => mailbox.id, { onDelete: "cascade" }),
-  period: text("period").notNull().default(""),
-  calls: integer("calls").notNull().default(0),
-  tokensIn: integer("tokens_in").notNull().default(0),
-  tokensOut: integer("tokens_out").notNull().default(0),
-  updatedAt: updatedAt(),
-});
-
-// Cumulative Workers AI usage for the reader features (summary/category, smart
-// reply, thread summarize) per mailbox. Mirrors `mailboxSpamUsage`; tracked
-// separately so the reader cap and the spam cap don't share a budget.
-export const mailboxAiUsage = sqliteTable("mailbox_ai_usage", {
-  mailboxId: text("mailbox_id")
-    .primaryKey()
-    .references(() => mailbox.id, { onDelete: "cascade" }),
-  period: text("period").notNull().default(""),
-  calls: integer("calls").notNull().default(0),
-  tokensIn: integer("tokens_in").notNull().default(0),
-  tokensOut: integer("tokens_out").notNull().default(0),
-  updatedAt: updatedAt(),
-});
 
 export const label = sqliteTable(
   "label",
@@ -649,7 +606,7 @@ export const threadFolder = sqliteTable(
 // Per-mailbox automation: when an inbound message matches `conditions`, apply
 // `actions` (label, file to folder, mark read/spam, hard-block). Belongs to
 // exactly one mailbox; `createdBy` records the owner so the user-scoped
-// moveFolder action knows whose `thread_folder` to write (invariant 17).
+// moveFolder action knows whose `thread_folder` to write.
 // Evaluated in mail/rules.ts, ordered by `priority` asc.
 export const rule = sqliteTable(
   "rule",
@@ -701,26 +658,6 @@ export const ruleSendLog = sqliteTable(
   (t) => [
     index("rule_send_log_mailbox_sent_idx").on(t.mailboxId, t.sentAt),
     index("rule_send_log_rule_recipient_idx").on(t.ruleId, t.recipient, t.sentAt),
-  ],
-);
-
-export const mailboxInvite = sqliteTable(
-  "mailbox_invite",
-  {
-    id: text("id").primaryKey(),
-    mailboxId: text("mailbox_id")
-      .notNull()
-      .references(() => mailbox.id, { onDelete: "cascade" }),
-    email: text("email").notNull(),
-    perms: integer("perms").notNull().default(0),
-    invitedByUserId: text("invited_by_user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    createdAt: createdAt(),
-  },
-  (t) => [
-    uniqueIndex("mailbox_invite_mailbox_email_uq").on(t.mailboxId, t.email),
-    index("mailbox_invite_email_idx").on(t.email),
   ],
 );
 
@@ -840,8 +777,8 @@ export const pushSubscription = sqliteTable(
 );
 
 // Per-user notification config for a mailbox. Presence of a row means
-// "configured"; absence means off (the default). Each AI priority tier maps to
-// a notification style: none (silent), normal, or important (attention-grabbing).
+// "configured"; absence means off (the default). `level` is the notification
+// style: none (silent), normal, or important (attention-grabbing).
 export const mailboxNotify = sqliteTable(
   "mailbox_notify",
   {
@@ -851,9 +788,8 @@ export const mailboxNotify = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    high: text("high", { enum: NOTIFY_LEVELS }).notNull().default("important"),
-    normal: text("normal", { enum: NOTIFY_LEVELS }).notNull().default("normal"),
-    low: text("low", { enum: NOTIFY_LEVELS }).notNull().default("normal"),
+    // Column name dates from when there was one level per priority tier.
+    level: text("normal", { enum: NOTIFY_LEVELS }).notNull().default("normal"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -956,23 +892,6 @@ export const reminder = sqliteTable(
   ],
 );
 
-export const shareToken = sqliteTable(
-  "share_token",
-  {
-    id: text("id").primaryKey(),
-    mailboxId: text("mailbox_id")
-      .notNull()
-      .references(() => mailbox.id, { onDelete: "cascade" }),
-    createdByUserId: text("created_by_user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    perms: integer("perms").notNull().default(1),
-    expiresAt: integer("expires_at", { mode: "timestamp" }),
-    createdAt: createdAt(),
-  },
-  (t) => [index("share_token_mailbox_idx").on(t.mailboxId)],
-);
-
 // ─── IMAP ───────────────────────────────────────────────────────────────────
 
 // Per-mailbox credentials for IMAP clients. Web sign-in (passkeys, 2FA) can't
@@ -1049,34 +968,4 @@ export const imapUid = sqliteTable(
     uniqueIndex("imap_uid_message_uq").on(t.imapFolderId, t.messageId),
     index("imap_uid_message_idx").on(t.messageId),
   ],
-);
-
-// ─── BIMI ───────────────────────────────────────────────────────────────────
-
-// Cached Brand Indicators for Message Identification (RFC 9162-adjacent; the
-// BIMI draft) logos, keyed by the sender's organizational domain. A lookup is a
-// DNS TXT query plus an HTTPS fetch of an SVG, so it is cached rather than done
-// per message — including negative results, which are the common case.
-//
-// `svg` holds the sanitized document inline: BIMI caps a logo at 32 KB, which
-// is well inside a D1 row, and keeping it here means no second store to keep in
-// step with the TTL. Null `svg` with status "none" is a remembered miss.
-export const bimiLogo = sqliteTable(
-  "bimi_logo",
-  {
-    // Organizational domain the record was found on ("github.com").
-    domain: text("domain").primaryKey(),
-    // "ok" when a logo was fetched, "none" when the domain publishes none (or
-    // published something unusable).
-    status: text("status", { enum: ["ok", "none"] }).notNull(),
-    svg: text("svg"),
-    // The `l=` URL the logo came from, kept for debugging a wrong logo.
-    source: text("source"),
-    // Whether the record carried an `a=` VMC. Not verified — surfacing that a
-    // mark is merely *asserted* is honest; claiming it is verified would not be.
-    hasAuthority: integer("has_authority", { mode: "boolean" }).notNull().default(false),
-    fetchedAt: integer("fetched_at", { mode: "timestamp" }).notNull().default(now),
-    expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
-  },
-  (t) => [index("bimi_logo_expires_idx").on(t.expiresAt)],
 );

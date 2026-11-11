@@ -10,13 +10,15 @@ import {
   thread,
 } from "@cfmail/db/schema";
 import { Flag } from "@cfmail/shared/flags";
-import type { SendMessageInput } from "@cfmail/shared/schemas";
+import type { SendMessageInput, ServiceSendHeaders } from "@cfmail/shared/schemas";
 import { and, count, eq, inArray } from "drizzle-orm";
 import { getOrCreatePgpMasterKey } from "../config.ts";
 import type { Env } from "../env.ts";
 import { AppError } from "../errors.ts";
 import { broadcastToUsers } from "../hub.ts";
 import { escapeHtml } from "../lib/encoding.ts";
+import { chunk, SQL_VARS_LIMIT } from "../lib/sql.ts";
+import { attachmentKey, sentMessageKey } from "./blob-keys.ts";
 import { addrsToText, bodyForIndex, buildMime, snippet, type ThreadingHeaders } from "./mime.ts";
 import {
   buildEncryptedMime,
@@ -30,15 +32,31 @@ import { fetchWkdKey } from "./wkd.ts";
 
 const utf8Encoder = new TextEncoder();
 
+// Cloudflare Email Sending limits per message. Checked here so the sender gets
+// a plain reason instead of the platform's raw rejection.
+// https://developers.cloudflare.com/email-service/platform/limits/
+const MAX_RECIPIENTS = 50;
+const MAX_MESSAGE_BYTES = 5 * 1024 * 1024;
+
 export async function sendFromMailbox(
   env: Env,
   db: DB,
   // null for key-authed service sends — there is no user to broadcast to.
   userId: string | null,
-  input: SendMessageInput,
+  // `headers` comes only from a service send (`serviceSend`): the one-click
+  // unsubscribe pair, already checked there.
+  input: SendMessageInput & { headers?: ServiceSendHeaders },
   // Reply/forward quote, resolved server-side (see mail/quote.ts).
   quote?: { html: string; text: string },
 ): Promise<{ messageId: string; threadId: string; pgpWarning?: string }> {
+  const recipientCount = input.to.length + (input.cc?.length ?? 0) + (input.bcc?.length ?? 0);
+  if (recipientCount > MAX_RECIPIENTS) {
+    throw new AppError(
+      "unprocessable",
+      `A message can have at most ${MAX_RECIPIENTS} recipients across To, Cc and Bcc. This one has ${recipientCount}.`,
+    );
+  }
+
   const mb = await db.query.mailbox.findFirst({
     where: eq(mailbox.id, input.mailboxId),
     columns: {
@@ -103,6 +121,7 @@ export async function sendFromMailbox(
   const sendHeaders: Record<string, string> = {};
   if (input.inReplyTo) sendHeaders["In-Reply-To"] = input.inReplyTo;
   if (input.references?.length) sendHeaders.References = input.references.join(" ");
+  Object.assign(sendHeaders, input.headers);
 
   const sentAt = new Date();
   const messageId = crypto.randomUUID();
@@ -148,16 +167,6 @@ export async function sendFromMailbox(
   if (input.inReplyTo) threading.inReplyTo = input.inReplyTo;
   if (input.references?.length) threading.references = input.references;
 
-  const { threadId } = await resolveThreadId(db, {
-    mailboxId: mb.id,
-    subject: input.subject,
-    inReplyTo: input.inReplyTo ?? null,
-    references: input.references ?? null,
-    participants: [{ name: fromName, address: fromAddr }, ...allRecipients],
-    fromAddr,
-    trustHeaders: true,
-  });
-
   const raw = buildMime({
     ...threading,
     from: { name: fromName, address: fromAddr },
@@ -169,15 +178,33 @@ export async function sendFromMailbox(
     text,
     html,
     attachments: attachmentBytes,
+    extraHeaders: input.headers,
+  });
+  const sizeBytes = utf8Encoder.encode(raw).byteLength;
+  if (sizeBytes > MAX_MESSAGE_BYTES) {
+    throw new AppError(
+      "unprocessable",
+      "The message is larger than 5 MB including attachments. Remove or shrink an attachment and send again.",
+    );
+  }
+
+  // Resolved only once the message is known to be sendable: this can create
+  // the thread row.
+  const { threadId } = await resolveThreadId(db, {
+    mailboxId: mb.id,
+    subject: input.subject,
+    inReplyTo: input.inReplyTo ?? null,
+    references: input.references ?? null,
+    participants: [{ name: fromName, address: fromAddr }, ...allRecipients],
+    fromAddr,
+    trustHeaders: true,
   });
 
-  const rawKey = `raw/${mb.id}/sent/${messageId}.eml`;
+  const rawKey = sentMessageKey(mb.id, messageId);
   // Same `att/<messageId>/...` layout the receive path writes (invariant 6), so
   // every reader — body endpoint, delete cleanup — treats sent and received
   // attachments identically.
-  const attKeys = attachmentBytes.map(
-    (a, idx) => `att/${messageId}/${idx}-${sanitizeFilename(a.filename)}`,
-  );
+  const attKeys = attachmentBytes.map((a, idx) => attachmentKey(messageId, idx, a.filename));
   const bodyIndex = bodyForIndex(text, html);
 
   // Persist BEFORE delivering. The reverse order could deliver mail and then
@@ -207,7 +234,7 @@ export async function sendFromMailbox(
       receivedAt: null,
       sentAt,
       rawR2Key: rawKey,
-      sizeBytes: utf8Encoder.encode(raw).byteLength,
+      sizeBytes,
       pgpEncrypted: pgpMail?.encrypted ?? false,
       pgpSigned: pgpMail?.signed ?? false,
     }),
@@ -339,22 +366,21 @@ async function persistSentAttachments(
       env.BLOBS.put(keys[idx]!, att.data, { httpMetadata: { contentType: att.contentType } }),
     ),
   );
-  await db.insert(attachment).values(
-    atts.map((att, idx) => ({
-      id: crypto.randomUUID(),
-      messageId,
-      filename: att.filename,
-      contentType: att.contentType,
-      sizeBytes: att.data.byteLength,
-      r2Key: keys[idx]!,
-      inline: att.inline ?? false,
-      contentId: att.contentId ?? null,
-    })),
+  const rows = atts.map((att, idx) => ({
+    id: crypto.randomUUID(),
+    messageId,
+    filename: att.filename,
+    contentType: att.contentType,
+    sizeBytes: att.data.byteLength,
+    r2Key: keys[idx]!,
+    inline: att.inline ?? false,
+    contentId: att.contentId ?? null,
+  }));
+  await Promise.all(
+    chunk(rows, Math.floor(SQL_VARS_LIMIT / Object.keys(rows[0]!).length)).map((batch) =>
+      db.insert(attachment).values(batch),
+    ),
   );
-}
-
-function sanitizeFilename(name: string): string {
-  return name.replace(/[^a-z0-9._-]+/gi, "_").slice(0, 128);
 }
 
 interface PgpSendArgs {
@@ -367,7 +393,7 @@ interface PgpSendArgs {
   fromAddr: string;
   fromName: string | undefined;
   replyToAddr: string | undefined;
-  input: SendMessageInput;
+  input: SendMessageInput & { headers?: ServiceSendHeaders };
   text: string | undefined;
   html: string | undefined;
   attachmentBytes: AttachmentBytes[];
@@ -465,6 +491,7 @@ async function buildPgpMail(db: DB, args: PgpSendArgs): Promise<PgpMail> {
     messageId: args.messageIdHdr,
     inReplyTo: args.input.inReplyTo,
     references: args.input.references,
+    extraHeaders: args.input.headers,
     date: args.date,
   };
   const content: MailContent = {

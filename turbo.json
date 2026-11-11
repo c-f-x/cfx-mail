@@ -1,6 +1,7 @@
 {
   "$schema": "https://turborepo.com/schema.json",
   "ui": "tui",
+  "agentGuidance": false,
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -13,8 +14,11 @@
       "dependsOn": [],
       "outputs": ["dist/**"]
     },
+    // The web app type-checks against the Worker's route types, so a change in
+    // the Worker's sources must invalidate the web typecheck's cache. Depending
+    // on the Worker's typecheck folds its inputs into this task's hash.
     "@cfmail/web#typecheck": {
-      "dependsOn": [],
+      "dependsOn": ["^typecheck"],
       "outputs": []
     },
     "@cfmail/worker#build": {

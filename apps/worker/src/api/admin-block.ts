@@ -1,6 +1,5 @@
 import { blocklist, blockRequest, user } from "@cfmail/db/schema";
 import { createBlockEntry, setDqsKey, setProtectedDomains } from "@cfmail/shared/schemas";
-import { zValidator } from "@hono/zod-validator";
 import { aliasedTable, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -14,6 +13,7 @@ import {
 } from "../mail/blocklist.ts";
 import { type DqsConfig, getDqsConfig, setDqsConfig, verifyDqsKey } from "../mail/dnsbl.ts";
 import { requireAdmin, requireUser } from "../middleware.ts";
+import { zValidator } from "./validate.ts";
 
 // Admin-only blocklist + block-request review. Mounted at /api/admin/block.
 export function adminBlockRoutes() {

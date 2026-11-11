@@ -1,12 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Timer } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { rpc, unwrap } from "@/lib/api.ts";
-import { cn } from "@/lib/cn.ts";
 import { keys } from "@/lib/query-keys.ts";
 import { Button } from "./ui/button.tsx";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog.tsx";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select.tsx";
 
 interface CreatedTemp {
@@ -27,40 +32,43 @@ const TTL_PRESETS: { label: string; seconds: number }[] = [
   { label: "7d", seconds: 7 * 24 * 3600 },
 ];
 
-export function NewTempMailbox() {
-  const [open, setOpen] = useState(false);
+/** The domains that allow temporary accounts; the switcher offers one only when there are some. */
+export function useTempDomains(): { id: string; name: string }[] {
+  const { data } = useQuery(tempDomainsQueryOptions);
+  return data?.domains ?? [];
+}
+
+/** Create a temporary account: pick a domain and how long it lives, then copy its address. */
+export function NewTempMailboxDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const [created, setCreated] = useState<CreatedTemp | null>(null);
-  const { data: domainsData } = useQuery(tempDomainsQueryOptions);
-
-  if ((domainsData?.domains.length ?? 0) === 0) return null;
-
   return (
-    <Popover
+    <Dialog
       open={open}
       onOpenChange={(next) => {
-        setOpen(next);
+        onOpenChange(next);
         if (!next) setCreated(null);
       }}
     >
-      <PopoverTrigger
-        className={cn(
-          "flex h-8 w-full items-center gap-2 rounded-lg border border-sidebar-border bg-card px-2.5 text-[13px] text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/40 data-[popup-open]:bg-sidebar-accent",
-        )}
-      >
-        <Timer className="h-3.5 w-3.5" />
-        New temp mailbox
-      </PopoverTrigger>
-      <PopoverContent className="w-[var(--anchor-width)] p-3">
-        <div className="mb-2 font-semibold text-[10px] text-muted-foreground uppercase tracking-wider">
-          Temporary mailbox
-        </div>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>New temporary account</DialogTitle>
+          <DialogDescription>
+            A throwaway address for testing. It and its mail are deleted when it expires.
+          </DialogDescription>
+        </DialogHeader>
         {created ? (
-          <CreatedPanel created={created} onDone={() => setOpen(false)} />
+          <CreatedPanel created={created} onDone={() => onOpenChange(false)} />
         ) : (
           <TempForm onCreated={setCreated} />
         )}
-      </PopoverContent>
-    </Popover>
+      </DialogContent>
+    </Dialog>
   );
 }
 

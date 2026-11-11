@@ -62,29 +62,21 @@ describe("push", () => {
 
   it("stores per-mailbox notify config and reads it back", async () => {
     const put = await request(asOwner(), "PUT", `/mailboxes/${MAILBOX_ID}`, {
-      high: "important",
-      normal: "normal",
-      low: "none",
+      level: "important",
     });
     expect(put.status).toBe(200);
 
     const list = await request(asOwner(), "GET", "/mailboxes");
-    const body = (await list.json()) as { configs: { mailboxId: string; high: string }[] };
+    const body = (await list.json()) as { configs: { mailboxId: string; level: string }[] };
     expect(body.configs).toHaveLength(1);
-    expect(body.configs[0]).toMatchObject({ mailboxId: MAILBOX_ID, high: "important" });
+    expect(body.configs[0]).toMatchObject({ mailboxId: MAILBOX_ID, level: "important" });
   });
 
-  it("all-none config drops the row (off)", async () => {
+  it("a none level drops the row (off)", async () => {
     await request(asOwner(), "PUT", `/mailboxes/${MAILBOX_ID}`, {
-      high: "important",
-      normal: "normal",
-      low: "none",
+      level: "important",
     });
-    const off = await request(asOwner(), "PUT", `/mailboxes/${MAILBOX_ID}`, {
-      high: "none",
-      normal: "none",
-      low: "none",
-    });
+    const off = await request(asOwner(), "PUT", `/mailboxes/${MAILBOX_ID}`, { level: "none" });
     expect(off.status).toBe(200);
     const rows = await db().select().from(mailboxNotify);
     expect(rows).toHaveLength(0);
@@ -92,9 +84,7 @@ describe("push", () => {
 
   it("forbids configuring a mailbox the user can't read", async () => {
     const res = await request(mountApp(pushRoutes, outsider), "PUT", `/mailboxes/${MAILBOX_ID}`, {
-      high: "important",
-      normal: "normal",
-      low: "none",
+      level: "important",
     });
     expect(res.status).toBe(403);
   });
@@ -102,18 +92,14 @@ describe("push", () => {
   it("lets a member with READ configure", async () => {
     await grantMember(db(), Perm.READ);
     const res = await request(mountApp(pushRoutes, member), "PUT", `/mailboxes/${MAILBOX_ID}`, {
-      high: "important",
-      normal: "normal",
-      low: "none",
+      level: "important",
     });
     expect(res.status).toBe(200);
   });
 
   it("validates the notify config enum", async () => {
     const res = await request(asOwner(), "PUT", `/mailboxes/${MAILBOX_ID}`, {
-      high: "loud",
-      normal: "normal",
-      low: "none",
+      level: "loud",
     });
     expect(res.status).toBe(400);
   });

@@ -10,15 +10,26 @@ const CF_DKIM_SELECTORS = ["cf2024-1", "cf2024-2", "cf2024-3"];
 type DohRecord = { type: number; data: string };
 type DohResponse = { Answer?: DohRecord[] };
 
-export async function dohQuery(name: string, type: "TXT" | "CNAME" | "A"): Promise<string[]> {
+// A lookup that hangs would hold up whatever awaits it, including the cron
+// tick, so each one has a deadline.
+const DOH_TIMEOUT_MS = 5_000;
+
+export async function dohQuery(
+  name: string,
+  type: "TXT" | "CNAME" | "A",
+  timeoutMs = DOH_TIMEOUT_MS,
+): Promise<string[]> {
   const url = new URL(DOH_URL);
   url.searchParams.set("name", name);
   url.searchParams.set("type", type);
   const res = await fetch(url.toString(), {
     headers: { Accept: "application/dns-json" },
     cf: { cacheTtl: 60, cacheEverything: true },
+    signal: AbortSignal.timeout(timeoutMs),
   } as RequestInit);
-  if (!res.ok) return [];
+  // An error from the resolver is not an empty answer: callers must not read
+  // it as "no records".
+  if (!res.ok) throw new Error(`DNS-over-HTTPS answered ${res.status}`);
   const data = (await res.json()) as DohResponse;
   return (data.Answer ?? []).map((a) => unquoteTxt(a.data));
 }

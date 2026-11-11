@@ -3,7 +3,6 @@ import { label, type RuleAction, rule } from "@cfmail/db/schema";
 import { Perm } from "@cfmail/shared/permissions";
 import type { RuleCloneResultDto, RuleDto, RuleListDto } from "@cfmail/shared/responses";
 import { cloneRule, createRule, updateRule } from "@cfmail/shared/schemas";
-import { zValidator } from "@hono/zod-validator";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -13,6 +12,7 @@ import { wrapUnique } from "../errors.ts";
 import { requireUser } from "../middleware.ts";
 import { requireEntityAccess, requirePerm } from "../permissions.ts";
 import { buildPatch } from "./util.ts";
+import { zValidator } from "./validate.ts";
 
 function serializeRule(r: typeof rule.$inferSelect): RuleDto {
   return { ...r, createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString() };
@@ -89,7 +89,11 @@ export function rulesRoutes() {
       });
       if (Object.keys(patch).length === 0) return c.json({ ok: true });
       await wrapUnique(
-        () => db.update(rule).set(patch).where(eq(rule.id, id)),
+        () =>
+          db
+            .update(rule)
+            .set({ ...patch, updatedAt: new Date() })
+            .where(eq(rule.id, id)),
         "a rule with that name already exists",
       );
       return c.json({ ok: true });

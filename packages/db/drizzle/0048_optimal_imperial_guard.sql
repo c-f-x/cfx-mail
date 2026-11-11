@@ -1,0 +1,1 @@
+ALTER TABLE `thread` ADD `list_id` text;

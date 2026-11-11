@@ -2,17 +2,9 @@ import type { DB } from "@cfmail/db";
 import { attachment, message, thread } from "@cfmail/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import type { Env } from "../env.ts";
+import { chunk, SQL_VARS_LIMIT } from "../lib/sql.ts";
 
 const R2_DELETE_BATCH = 1000;
-// D1 rejects a query with more than 100 bound parameters, so any `inArray` over
-// a caller-supplied id list must be fed in chunks below that cap.
-const SQL_VARS_LIMIT = 100;
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
 
 export async function collectThreadBlobKeys(db: DB, threadIds: string[]): Promise<string[]> {
   if (!threadIds.length) return [];

@@ -1,8 +1,9 @@
 import type { MeUserDto } from "@cfmail/shared/responses";
+import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
-import { logger } from "hono/logger";
+import { routePath } from "hono/route";
 import { authFromCtx } from "../auth-ctx.ts";
 import type { AppBindings } from "../env.ts";
 import { AppError, httpStatus } from "../errors.ts";
@@ -31,11 +32,35 @@ import { tempRoutes } from "./temp.ts";
 import { threadsRoutes } from "./threads.ts";
 import { usersRoutes } from "./users.ts";
 
+// One line per request for Workers Logs: method, the route pattern that
+// answered, status and duration. Never the concrete path or the query string,
+// which carry invite tokens, search terms and signed image-proxy URLs.
+const requestLog: MiddlewareHandler<AppBindings> = async (c, next) => {
+  const start = Date.now();
+  await next();
+  console.log(`${c.req.method} ${routePath(c)} ${c.res.status} ${Date.now() - start}ms`);
+};
+
+// Runs one health probe. The caller gets "ok" or "failed", never the error:
+// the detail goes to Workers Logs only.
+async function probe(
+  part: "db" | "storage",
+  run: () => Promise<unknown>,
+): Promise<"ok" | "failed"> {
+  try {
+    await run();
+    return "ok";
+  } catch (err) {
+    console.error("health_failed", part, err);
+    return "failed";
+  }
+}
+
 // Single chained expression: Hono RPC (`hc<AppType>` in the web app) can only
 // infer the route schema when every registration flows through the chain.
 export function buildApi() {
   const app = new Hono<AppBindings>()
-    .use("*", logger())
+    .use("*", requestLog)
     .use(
       "/api/*",
       cors({
@@ -62,10 +87,30 @@ export function buildApi() {
     // /api/users (admin-created) or /api/invites/accept (invited user).
     .all("/api/auth/*", async (c) => {
       const auth = await authFromCtx(c);
-      return auth.handler(c.req.raw);
+      const res = await auth.handler(c.req.raw);
+      // Mail bodies and attachments may sit in the browser's cache; on a shared
+      // computer they must not outlive the session.
+      if (c.req.path === "/api/auth/sign-out" && res.ok) {
+        const out = new Response(res.body, res);
+        out.headers.set("Clear-Site-Data", '"cache"');
+        return out;
+      }
+      return res;
+    })
+    // Before the session middleware: a probe must not depend on sign-in, and
+    // must cost one database statement, not the three a session lookup adds.
+    .get("/api/health", async (c) => {
+      const [db, storage] = await Promise.all([
+        probe("db", () => c.env.DB.prepare("SELECT 1").first()),
+        // A key outside every layout in AGENTS.md invariant 6. Asking for a
+        // missing key is the cheapest call that still reaches R2.
+        probe("storage", () => c.env.BLOBS.head("health/none")),
+      ]);
+      const ok = db === "ok" && storage === "ok";
+      c.header("Cache-Control", "no-store");
+      return c.json({ ok, db, storage }, ok ? 200 : 503);
     })
     .use("/api/*", sessionMiddleware)
-    .get("/api/health", (c) => c.json({ ok: true, ts: Date.now() }))
     .get("/api/me", (c) => {
       // Better Auth's inferred session-user type drops plugin fields (role,
       // twoFactorEnabled) that the runtime object carries; MeUserDto is the
@@ -96,8 +141,9 @@ export function buildApi() {
     .get("/api/stream", streamRoute);
 
   // One error shape everywhere: `{ error }`. HTTPExceptions carrying their own
-  // response (e.g. zValidator) keep it; the rest become JSON so clients never
-  // have to special-case a plain-text body.
+  // response keep it; the rest become JSON so clients never have to
+  // special-case a plain-text body. Validation failures answer in the same shape
+  // before they get here (api/validate.ts).
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
       if (err.res) return err.getResponse();

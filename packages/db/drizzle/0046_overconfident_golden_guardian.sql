@@ -1,0 +1,1 @@
+ALTER TABLE `mailbox` ADD `purge_started_at` integer;

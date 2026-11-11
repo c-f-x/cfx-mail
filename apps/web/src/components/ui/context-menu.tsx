@@ -7,10 +7,6 @@ function ContextMenu({ ...props }: ContextMenuPrimitive.Root.Props) {
   return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} />;
 }
 
-function ContextMenuPortal({ ...props }: ContextMenuPrimitive.Portal.Props) {
-  return <ContextMenuPrimitive.Portal data-slot="context-menu-portal" {...props} />;
-}
-
 function ContextMenuTrigger({ className, ...props }: ContextMenuPrimitive.Trigger.Props) {
   return (
     <ContextMenuPrimitive.Trigger
@@ -49,34 +45,6 @@ function ContextMenuContent({
         />
       </ContextMenuPrimitive.Positioner>
     </ContextMenuPrimitive.Portal>
-  );
-}
-
-function ContextMenuGroup({ ...props }: ContextMenuPrimitive.Group.Props) {
-  return <ContextMenuPrimitive.Group data-slot="context-menu-group" {...props} />;
-}
-
-// A standalone section heading. Base UI's ContextMenu.GroupLabel requires a
-// wrapping ContextMenu.Group (throws #31 otherwise); these labels are plain
-// headers, so render a styled presentation div instead.
-function ContextMenuLabel({
-  className,
-  inset,
-  ...props
-}: React.ComponentProps<"div"> & {
-  inset?: boolean;
-}) {
-  return (
-    <div
-      role="presentation"
-      data-slot="context-menu-label"
-      data-inset={inset}
-      className={cn(
-        "px-1.5 py-1 text-xs font-medium text-muted-foreground data-inset:pl-7",
-        className,
-      )}
-      {...props}
-    />
   );
 }
 
@@ -172,38 +140,6 @@ function ContextMenuCheckboxItem({
   );
 }
 
-function ContextMenuRadioGroup({ ...props }: ContextMenuPrimitive.RadioGroup.Props) {
-  return <ContextMenuPrimitive.RadioGroup data-slot="context-menu-radio-group" {...props} />;
-}
-
-function ContextMenuRadioItem({
-  className,
-  children,
-  inset,
-  ...props
-}: ContextMenuPrimitive.RadioItem.Props & {
-  inset?: boolean;
-}) {
-  return (
-    <ContextMenuPrimitive.RadioItem
-      data-slot="context-menu-radio-item"
-      data-inset={inset}
-      className={cn(
-        "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        className,
-      )}
-      {...props}
-    >
-      <span className="pointer-events-none absolute right-2">
-        <ContextMenuPrimitive.RadioItemIndicator>
-          <CheckIcon />
-        </ContextMenuPrimitive.RadioItemIndicator>
-      </span>
-      {children}
-    </ContextMenuPrimitive.RadioItem>
-  );
-}
-
 function ContextMenuSeparator({ className, ...props }: ContextMenuPrimitive.Separator.Props) {
   return (
     <ContextMenuPrimitive.Separator
@@ -233,14 +169,9 @@ export {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuCheckboxItem,
-  ContextMenuRadioItem,
-  ContextMenuLabel,
   ContextMenuSeparator,
   ContextMenuShortcut,
-  ContextMenuGroup,
-  ContextMenuPortal,
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
-  ContextMenuRadioGroup,
 };

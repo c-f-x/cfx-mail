@@ -13,6 +13,7 @@ import {
   type ThreadRow,
   threadQuery,
 } from "@/lib/queries.ts";
+import { threadSubject } from "@/lib/thread-subject.ts";
 import { formatStamp } from "@/lib/time.ts";
 import { useSwipeRow } from "@/lib/use-swipe-row.ts";
 import { SenderAvatar } from "./sender-avatar.tsx";
@@ -36,23 +37,6 @@ export interface RowSwipe {
   onLongPress?: () => void;
 }
 
-// Subtle per-category chip colours for the AI auto-category. Kept muted so they
-// don't compete with user labels; `other` is never rendered.
-const CATEGORY_CLASS: Record<string, string> = {
-  personal: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
-  newsletter: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
-  promotion: "bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400",
-  shipping: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
-  receipt: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  finance: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  travel: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",
-  social: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
-  security: "bg-red-500/10 text-red-600 dark:text-red-400",
-  update: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
-  notification: "bg-slate-500/10 text-slate-600 dark:text-slate-400",
-  calendar: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
-};
-
 // Where the row links to; both list flavors share one row body.
 type RowLink =
   | { kind: "mailbox"; mailboxId: string; view: MailView; unread?: boolean }
@@ -66,6 +50,8 @@ interface Props {
   selected?: boolean;
   /** Distinct labels across the thread's messages, shown as chips. */
   labels?: MessageLabel[];
+  /** Which account the conversation is in, where rows of several accounts mix. */
+  account?: string | null;
   /** Multi-select checkbox, drawn over the avatar (mailbox lists only). */
   select?: { selecting: boolean; onToggle: () => void };
   /** Hover action cluster; omit to hide it (e.g. while selecting). */
@@ -86,6 +72,7 @@ export function ThreadRowView({
   active,
   selected = false,
   labels,
+  account,
   select,
   actions,
   rowRef,
@@ -100,9 +87,6 @@ export function ThreadRowView({
   const firstParticipant = thread.participants[0];
   const label = firstParticipant?.name ?? firstParticipant?.address ?? "(unknown)";
   const unread = thread.unreadCount > 0;
-  const showSummary = prefs.aiSummaries !== false && !!thread.aiSummary;
-  const category = thread.aiCategory && thread.aiCategory !== "other" ? thread.aiCategory : null;
-  const important = thread.aiPriority === "high";
 
   // Label chips come from a separate query that resolves after the row first
   // measures, growing it a line taller. The virtualizer's ResizeObserver doesn't
@@ -114,20 +98,21 @@ export function ThreadRowView({
     rowRef?.(el);
   };
   // Anything that adds/removes a line and can land after the first measure:
-  // label chips (async query) plus summary/category (can stream in over SSE).
-  const heightKey = `${labels?.map((l) => l.id).join(",") ?? ""}|${category ?? ""}|${showSummary ? 1 : 0}|${compact ? 1 : 0}`;
+  // label chips (async query).
+  const heightKey = `${labels?.map((l) => l.id).join(",") ?? ""}|${account ?? ""}|${compact ? 1 : 0}`;
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-measure on height change
   useLayoutEffect(() => {
-    // eslint-disable-next-line react-doctor/no-prop-callback-in-effect -- virtualizer height remeasure must run post-layout when the row's line count changes
+    // virtualizer height remeasure must run post-layout when the row's line count changes
     if (node.current && dataIndex !== undefined) remeasure?.(dataIndex, node.current);
   }, [heightKey, dataIndex, remeasure]);
 
   // Router intent-preload already warms the thread's message list on hover, but
   // the per-message bodies (the slow part you see render as a skeleton) are
-  // fetched only when the cards mount. Prefetch the newest few bodies on hover
-  // intent so opening the thread paints the HTML at once. Bodies are immutable
-  // (`staleTime: Infinity`), so this is a one-time fetch per message. A short
-  // delay keeps a fast scroll-sweep over rows from firing requests.
+  // fetched only when the cards mount. Prefetch the newest few bodies (in one
+  // request) on hover intent so opening the thread paints the HTML at once.
+  // Bodies are immutable (`staleTime: Infinity`), so this is a one-time fetch
+  // per message. A short delay keeps a fast scroll-sweep over rows from firing
+  // requests.
   const qc = useQueryClient();
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const prefetch = () => {
@@ -135,7 +120,8 @@ export function ThreadRowView({
       void qc
         .ensureQueryData(threadQuery(thread.id))
         .then((d) => {
-          for (const m of d.messages.slice(-6)) void qc.prefetchQuery(messageBodyQuery(m.id));
+          for (const m of d.messages.slice(-6))
+            void qc.prefetchQuery(messageBodyQuery(m.id, thread.id));
         })
         .catch(() => {});
     }, 80);
@@ -218,13 +204,12 @@ export function ThreadRowView({
             unread ? "font-medium text-foreground" : "text-muted-foreground",
           )}
         >
-          {thread.subjectNorm || "(no subject)"}
+          {threadSubject(thread)}
         </span>
         {unread && (
-          // eslint-disable-next-line react-doctor/prefer-tag-over-role -- decorative status dot conveying unread count; not a real image
           <span
             className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-            role="img" // react-doctor-disable-line prefer-tag-over-role -- decorative CSS dot conveying unread count via aria-label; not a real image
+            role="img" // decorative CSS dot conveying unread count via aria-label; not a real image
             aria-label={`${thread.unreadCount} unread`}
           />
         )}
@@ -238,31 +223,16 @@ export function ThreadRowView({
           </span>
         )}
       </div>
-      {showSummary && (
-        <span className="truncate text-[12px] text-muted-foreground/90 italic">
-          {thread.aiSummary}
-        </span>
-      )}
-      {(important || category || (labels && labels.length > 0)) && (
-        <div className="flex flex-wrap items-center gap-1">
-          {important && (
-            <span className="inline-flex items-center rounded-full bg-red-500/10 px-1.5 py-px font-medium text-[10px] text-red-600 dark:text-red-400">
-              Important
-            </span>
-          )}
-          {category && (
-            <span
-              className={cn(
-                "inline-flex items-center rounded-full px-1.5 py-px font-medium text-[10px] capitalize",
-                CATEGORY_CLASS[category],
-              )}
-            >
-              {category}
-            </span>
-          )}
+      {((labels && labels.length > 0) || account) && (
+        <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1">
           {labels?.map((l) => (
             <LabelChip key={l.id} name={l.name} color={l.color} />
           ))}
+          {account && (
+            <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground tracking-normal">
+              {account}
+            </span>
+          )}
         </div>
       )}
     </>
@@ -286,9 +256,9 @@ export function ThreadRowView({
           "relative z-10 flex min-w-0 flex-1 items-stretch",
           sw.dragging ? "" : "transition-transform duration-200",
           active
-            ? "bg-accent text-accent-foreground"
+            ? "bg-primary/10 text-foreground"
             : selected
-              ? "bg-accent/40"
+              ? "bg-primary/5"
               : "bg-card hover:bg-muted/60",
         )}
         style={swipe ? { transform: `translateX(${sw.dx}px)`, touchAction: "pan-y" } : undefined}

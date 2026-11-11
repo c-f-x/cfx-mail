@@ -3,6 +3,7 @@ import { CalendarClock, CalendarX2, MapPin, Repeat, Users, Video } from "lucide-
 import { cn } from "@/lib/cn.ts";
 import { useDateTimeFmt, useUserPrefs } from "@/lib/prefs.ts";
 import { type DateTimeFmt, formatClock, formatDateTime } from "@/lib/time.ts";
+import { urlHost } from "@/lib/url-host.ts";
 
 // Render a calendar invite's start/end window. All-day events show the date(s)
 // only; timed events show the day plus a start–end time range.
@@ -113,15 +114,20 @@ export function CalendarBanner({ event }: { event: CalendarEventDto }) {
             </div>
           )}
           {!cancelled && event.meetingUrl && (
-            <a
-              href={event.meetingUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-1.5 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 font-medium text-[12px] text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              <Video className="size-3.5 shrink-0" />
-              Join meeting
-            </a>
+            <div className="mt-1.5 flex items-center gap-2">
+              <a
+                href={event.meetingUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 font-medium text-[12px] text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <Video className="size-3.5 shrink-0" />
+                Join meeting
+              </a>
+              <span className="font-mono text-[11px] text-muted-foreground">
+                {urlHost(event.meetingUrl)}
+              </span>
+            </div>
           )}
         </div>
       </div>

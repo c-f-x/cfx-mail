@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `message_inbound_delivery_uq` ON `message` (`mailbox_id`,`message_id_hdr`,`delivered_to`) WHERE "message"."direction" = 'in' AND "message"."message_id_hdr" IS NOT NULL AND "message"."delivered_to" IS NOT NULL;

@@ -17,8 +17,103 @@
     "react/set-state-in-effect": "warn",
     "react/refs": "warn",
     "react/purity": "warn",
-    "react/preserve-manual-memoization": "warn"
+    "react/preserve-manual-memoization": "warn",
+    // Type-aware (oxlint --type-aware): no promise is left unawaited
+    // (c-f-x conventions, section 2). The safe calls are ones that never
+    // reject or that their runner tracks: node:test's test functions,
+    // TanStack Query's invalidateQueries (throwOnError is off by default) and
+    // TanStack Router's navigate. A React handler may be async.
+    "typescript/no-floating-promises": [
+      "error",
+      {
+        "allowForKnownSafeCalls": [
+          {
+            "from": "package",
+            "name": [
+              "test",
+              "it",
+              "describe",
+              "suite",
+              "before",
+              "after",
+              "beforeEach",
+              "afterEach"
+            ],
+            "package": "node:test"
+          },
+          { "from": "package", "name": ["invalidateQueries"], "package": "@tanstack/query-core" },
+          {
+            "from": "package",
+            "name": ["navigate", "NavigateFn", "UseNavigateResult"],
+            "package": "@tanstack/router-core"
+          }
+        ]
+      }
+    ],
+    "typescript/no-misused-promises": ["error", { "checksVoidReturn": { "attributes": false } }],
+    "typescript/await-thenable": "error",
+    // Off: type-aware mode reports every `as` cast (about 450 in 2026-11).
+    // Removing them is a refactor across upstream's files, not part of
+    // turning the promise rules on. Nothing holds casts down yet.
+    "typescript/no-unsafe-type-assertion": "off",
+    "typescript/no-unnecessary-type-assertion": "off"
   },
+  "overrides": [
+    {
+      // Test helpers sit inside the describe block whose tests use them, so a
+      // reader finds them there. oxlint 1.87 asks to hoist every one that
+      // captures nothing; in tests, that would scatter them.
+      "files": ["apps/worker/test/**", "**/*.test.ts", "**/*.test.tsx"],
+      "rules": {
+        "unicorn/consistent-function-scoping": "off"
+      }
+    },
+    {
+      // AGENTS.md invariant 9: HTTPException belongs to the HTTP transport.
+      // Code below it throws AppError (errors.ts), which api/ and imap/ translate.
+      "files": ["apps/worker/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "hono/http-exception",
+                "message": "Throw AppError (errors.ts) outside apps/worker/src/api/ (AGENTS.md invariant 9)."
+              },
+              {
+                "name": "@hono/zod-validator",
+                "message": "Import zValidator from api/validate.ts, so validation failures answer { error } with a sentence."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // api/ owns HTTPException, but its routes still validate through validate.ts.
+      "files": ["apps/worker/src/api/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@hono/zod-validator",
+                "message": "Import zValidator from api/validate.ts, so validation failures answer { error } with a sentence."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["apps/worker/src/api/validate.ts"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ],
   "ignorePatterns": [
     "node_modules",
     "dist",

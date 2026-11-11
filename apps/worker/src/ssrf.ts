@@ -49,6 +49,8 @@ function isBlockedIpv4(ip: number): boolean {
   if (a === 172 && b >= 16 && b <= 31) return true; // private
   if (a === 192 && b === 168) return true; // private
   if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+  if (ip >>> 8 === 0xc00000) return true; // 192.0.0.0/24, IETF protocol assignments
+  if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15, benchmarking
   return false;
 }
 
@@ -103,6 +105,7 @@ function isBlockedIpv6(g: number[]): boolean {
   if ((g[0]! & 0xffc0) === 0xfe80) return true; // link-local fe80::/10
   if ((g[0]! & 0xfe00) === 0xfc00) return true; // unique-local fc00::/7
   if ((g[0]! & 0xff00) === 0xff00) return true; // multicast ff00::/8
+  if (g[0] === 0x2002) return true; // 6to4 2002::/16 wraps an arbitrary IPv4 address
   const embedded = (((g[6]! << 16) | g[7]!) >>> 0) as number;
   // IPv4-mapped ::ffff:0:0/96 and IPv4-compatible ::/96 — range-check the
   // embedded v4 regardless of how it was written (dotted or hex groups).
@@ -116,7 +119,11 @@ function isBlockedIpv6(g: number[]): boolean {
 
 /** Best-effort block of internal/reserved targets for IP-literal/internal hosts. */
 export function isBlockedHost(hostname: string): boolean {
-  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  // A trailing dot is the same name ("localhost." resolves like "localhost").
+  const h = hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.+$/, "");
   if (
     h === "localhost" ||
     h.endsWith(".localhost") ||
@@ -145,7 +152,11 @@ export async function safeRedirectFetch(
   initial: URL,
   init: RequestInit,
   maxHops = 5,
+  // Applies when the caller set no signal of its own. The target is chosen by
+  // whoever sent the mail, so it may never answer.
+  timeoutMs = 10_000,
 ): Promise<Response | { blocked: true; reason: string }> {
+  const signal = init.signal ?? AbortSignal.timeout(timeoutMs);
   let target = initial;
   for (let hop = 0; hop <= maxHops; hop++) {
     if (target.protocol !== "http:" && target.protocol !== "https:")
@@ -153,7 +164,7 @@ export async function safeRedirectFetch(
     if (isBlockedHost(target.hostname)) return { blocked: true, reason: "blocked host" };
 
     // eslint-disable-next-line no-await-in-loop -- each hop depends on the prior response
-    const res = await fetch(target, { ...init, redirect: "manual" });
+    const res = await fetch(target, { ...init, signal, redirect: "manual" });
     if (res.status < 300 || res.status >= 400) return res;
     const loc = res.headers.get("location");
     if (!loc) return res; // redirect with no target — let caller treat as non-2xx

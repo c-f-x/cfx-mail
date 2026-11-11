@@ -120,24 +120,35 @@ export function removeThreadsFromFolder(
 
 type Snapshot = [readonly unknown[], unknown][];
 
+// An account's threads also sit in the All accounts lists, cached under their
+// own "all" root; an optimistic edit has to reach both or the unified view
+// shows a trashed row until the refetch lands.
+function listRoots(mailboxId: string): string[] {
+  return mailboxId === "all" ? ["all"] : [mailboxId, "all"];
+}
+
 export function snapshotMailboxThreads(qc: QueryClient, mailboxId: string): Snapshot {
-  return qc.getQueriesData({ queryKey: keys.threadsRoot(mailboxId) });
+  return listRoots(mailboxId).flatMap((id) =>
+    qc.getQueriesData({ queryKey: keys.threadsRoot(id) }),
+  );
 }
 
 export function restoreSnapshot(qc: QueryClient, snapshot: Snapshot): void {
   for (const [key, data] of snapshot) qc.setQueryData(key, data);
 }
 
-/** Drop threads from every cached view list for a mailbox (trash/spam/restore). */
+/** Drop threads from every cached view list for a mailbox and All accounts (trash/spam/restore). */
 export function removeThreadsFromLists(
   qc: QueryClient,
   mailboxId: string,
   ids: Iterable<string>,
 ): void {
   const idSet = new Set(ids);
-  qc.setQueriesData({ queryKey: keys.threadsRoot(mailboxId) }, (old) =>
-    old ? mapThreadCache(old, (threads) => threads.filter((t) => !idSet.has(t.id))) : old,
-  );
+  for (const root of listRoots(mailboxId)) {
+    qc.setQueriesData({ queryKey: keys.threadsRoot(root) }, (old) =>
+      old ? mapThreadCache(old, (threads) => threads.filter((t) => !idSet.has(t.id))) : old,
+    );
+  }
 }
 
 /** Patch matching threads in every cached view list (e.g. read/unread). */
@@ -148,13 +159,15 @@ export function patchThreadsInLists(
   patch: Partial<ThreadDto>,
 ): void {
   const idSet = new Set(ids);
-  qc.setQueriesData({ queryKey: keys.threadsRoot(mailboxId) }, (old) =>
-    old
-      ? mapThreadCache(old, (threads) =>
-          threads.map((t) => (idSet.has(t.id) ? { ...t, ...patch } : t)),
-        )
-      : old,
-  );
+  for (const root of listRoots(mailboxId)) {
+    qc.setQueriesData({ queryKey: keys.threadsRoot(root) }, (old) =>
+      old
+        ? mapThreadCache(old, (threads) =>
+            threads.map((t) => (idSet.has(t.id) ? { ...t, ...patch } : t)),
+          )
+        : old,
+    );
+  }
 }
 
 /**

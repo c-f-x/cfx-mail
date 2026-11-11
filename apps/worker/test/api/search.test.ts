@@ -1,5 +1,6 @@
-import { message, thread } from "@cfmail/db/schema";
+import { mailbox, message, thread } from "@cfmail/db/schema";
 import { Perm } from "@cfmail/shared/permissions";
+import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { searchRoutes } from "../../src/api/search.ts";
 import { applyMigrationsOnce, db, mountApp, request, resetDb } from "../support/app.ts";
@@ -183,5 +184,32 @@ describe("search", () => {
     const body = (await res.json()) as SearchBody;
     expect(body.results).toHaveLength(1);
     expect(body.results[0]?.messageId).toBeDefined();
+  });
+
+  it("does not find mail in a mailbox that is being deleted or emptied", async () => {
+    await seedMessage({ subject: "kept invoice" });
+    await seedMessage({ subject: "doomed invoice", mailboxId: OTHER_MAILBOX_ID });
+    const found = async () =>
+      ((await (await request(asOwner(), "GET", "/?q=invoice")).json()) as SearchBody).results.map(
+        (r) => r.mailboxId,
+      );
+    expect((await found()).toSorted()).toEqual([MAILBOX_ID, OTHER_MAILBOX_ID].toSorted());
+
+    for (const mode of ["delete", "empty"] as const) {
+      // eslint-disable-next-line no-await-in-loop -- independent cases, in order
+      await db()
+        .update(mailbox)
+        .set({ pendingPurge: mode })
+        .where(eq(mailbox.id, OTHER_MAILBOX_ID));
+      // eslint-disable-next-line no-await-in-loop
+      expect(await found()).toEqual([MAILBOX_ID]);
+    }
+  });
+
+  it("needs READ, not just membership, to search a shared mailbox", async () => {
+    await seedMessage({ subject: "members only" });
+    await grantMember(db(), Perm.WRITE);
+    const res = await request(mountApp(searchRoutes, member), "GET", "/?q=members");
+    expect(((await res.json()) as SearchBody).results).toHaveLength(0);
   });
 });

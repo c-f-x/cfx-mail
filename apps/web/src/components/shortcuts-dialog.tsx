@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog.tsx";
 import { Kbd } from "./ui/kbd.tsx";
 
@@ -14,6 +15,25 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
   { keys: ["/"], label: "Search" },
   { keys: ["?"], label: "Show this help" },
 ];
+
+// Open from `?` and from the user menu, so the state lives outside both.
+let helpOpen = false;
+const listeners = new Set<() => void>();
+
+export function setShortcutsHelpOpen(open: boolean): void {
+  helpOpen = open;
+  for (const l of listeners) l();
+}
+
+export function useShortcutsHelpOpen(): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
+    () => helpOpen,
+  );
+}
 
 export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (

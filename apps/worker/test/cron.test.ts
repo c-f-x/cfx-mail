@@ -3,8 +3,10 @@ import { makeDB } from "@cfmail/db";
 import { attachment, domain, mailbox, message, thread, user } from "@cfmail/db/schema";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { runCron } from "../src/cron.ts";
 import type { Env } from "../src/env.ts";
+import { handleInbound } from "../src/mail/receive.ts";
+import { markMailboxPurge } from "../src/mailbox-purge.ts";
+import { runCronOffline } from "./support/cron.ts";
 
 const e = env as unknown as Env & { TEST_MIGRATIONS: Parameters<typeof applyD1Migrations>[1] };
 
@@ -161,7 +163,7 @@ describe("runCron — temp mailbox GC", () => {
     const reader = res.body.getReader();
     readers.push(reader);
 
-    await runCron(e, now);
+    await runCronOffline(e, now);
 
     const remaining = await db.query.mailbox.findMany();
     const remainingIds = new Set(remaining.map((m) => m.id));
@@ -195,7 +197,7 @@ describe("runCron — temp mailbox GC", () => {
       .set({ expiresAt: new Date(now.getTime() + 60 * 60 * 1000) })
       .where(eq(mailbox.id, EXPIRED_ID));
 
-    await runCron(e, now);
+    await runCronOffline(e, now);
 
     const remaining = await db.query.mailbox.findMany();
     expect(remaining).toHaveLength(3);
@@ -212,7 +214,7 @@ describe("runCron — temp mailbox GC", () => {
       .set({ expiresAt: new Date(now.getTime() - 60 * 60 * 1000) })
       .where(eq(mailbox.id, PERSONAL_ID));
 
-    await runCron(e, now);
+    await runCronOffline(e, now);
 
     const personal = await db.query.mailbox.findFirst({ where: eq(mailbox.id, PERSONAL_ID) });
     expect(personal).toBeDefined();
@@ -238,7 +240,7 @@ describe("runCron — trash retention purge", () => {
       .set({ trashed: true, trashedAt: new Date(now.getTime() - 5 * DAY) })
       .where(eq(thread.id, "thread-fresh"));
 
-    await runCron(e, now);
+    await runCronOffline(e, now);
 
     expect(
       await db.query.thread.findFirst({ where: eq(thread.id, "thread-personal") }),
@@ -259,7 +261,7 @@ describe("runCron — trash retention purge", () => {
       .set({ trashed: true, trashedAt: null })
       .where(eq(thread.id, "thread-personal"));
 
-    await runCron(e, now);
+    await runCronOffline(e, now);
 
     expect(
       await db.query.thread.findFirst({ where: eq(thread.id, "thread-personal") }),
@@ -318,7 +320,7 @@ describe("runCron — service mailbox retention", () => {
     const now = new Date();
     await seedService(now);
 
-    await runCron(e, now);
+    await runCronOffline(e, now);
 
     expect(await db.query.thread.findFirst({ where: eq(thread.id, "svc-old") })).toBeUndefined();
     expect(
@@ -328,5 +330,116 @@ describe("runCron — service mailbox retention", () => {
 
     expect(await db.query.thread.findFirst({ where: eq(thread.id, "svc-new") })).toBeDefined();
     expect(await e.BLOBS.head(NEW_RAW)).not.toBeNull();
+  });
+});
+
+describe("runCron — pending mailbox purge", () => {
+  const HOUR = 60 * 60 * 1000;
+
+  // seed() gives PERSONAL_ID one thread with one message and one raw blob. Age
+  // the thread so it predates any purge requested in the test, and keep the
+  // temp-mailbox GC out of the way so it does not share the drain budget.
+  async function seedPersonal(now: Date): Promise<void> {
+    await seed(now);
+    await db
+      .update(thread)
+      .set({ lastMsgAt: new Date(now.getTime() - HOUR) })
+      .where(eq(thread.id, "thread-personal"));
+    await db
+      .update(mailbox)
+      .set({ expiresAt: new Date(now.getTime() + HOUR) })
+      .where(eq(mailbox.id, EXPIRED_ID));
+  }
+
+  const personalThreads = () =>
+    db.query.thread.findMany({ where: eq(thread.mailboxId, PERSONAL_ID), columns: { id: true } });
+  const personalMailbox = () => db.query.mailbox.findFirst({ where: eq(mailbox.id, PERSONAL_ID) });
+
+  it("drains a delete-pending mailbox across ticks, then drops the mailbox", async () => {
+    const now = new Date();
+    await seedPersonal(now);
+    // 1,050 more threads: over one tick's budget of 1,000.
+    const ids = Array.from({ length: 1050 }, (_, i) => `bulk-${i}`);
+    const rows: string[][] = [];
+    for (let i = 0; i < ids.length; i += 50) rows.push(ids.slice(i, i + 50));
+    await e.DB.batch(
+      rows.map((part) =>
+        e.DB.prepare(
+          `INSERT INTO thread (id, mailbox_id) VALUES ${part.map(() => "(?, ?)").join(", ")}`,
+        ).bind(...part.flatMap((id) => [id, PERSONAL_ID])),
+      ),
+    );
+    await markMailboxPurge(db, PERSONAL_ID, "delete");
+
+    await runCronOffline(e, now);
+    expect(await personalThreads()).toHaveLength(51);
+    expect((await personalMailbox())?.pendingPurge).toBe("delete");
+
+    await runCronOffline(e, now);
+    expect(await personalThreads()).toHaveLength(0);
+    expect(await db.query.message.findFirst({ where: eq(message.id, "msg-3") })).toBeUndefined();
+    expect(await e.BLOBS.head(PERSONAL_RAW)).toBeNull();
+    expect(await personalMailbox()).toBeUndefined();
+    // Other mailboxes are untouched.
+    expect(await db.query.thread.findFirst({ where: eq(thread.id, "thread-fresh") })).toBeDefined();
+    expect(await e.BLOBS.head(FRESH_RAW)).not.toBeNull();
+  });
+
+  it("empties a mailbox but keeps mail that arrived after the empty was requested", async () => {
+    const now = new Date();
+    await seedPersonal(now);
+    await markMailboxPurge(db, PERSONAL_ID, "empty");
+
+    // The mailbox still receives while it waits for the drain.
+    const raw = "From: sender@elsewhere.com\r\nTo: me@example.com\r\nSubject: Late\r\n\r\nbody\r\n";
+    const inbound = {
+      from: "sender@elsewhere.com",
+      to: "me@example.com",
+      headers: new Headers(),
+      raw: new Response(raw).body,
+      rawSize: raw.length,
+      setReject() {},
+      async forward() {},
+      async reply() {},
+    } as unknown as ForwardableEmailMessage;
+    await handleInbound(inbound, e);
+    const late = (
+      await db.query.message.findMany({ where: eq(message.mailboxId, PERSONAL_ID) })
+    ).find((m) => m.id !== "msg-3")!;
+
+    await runCronOffline(e, new Date());
+
+    // What was there when the empty was requested is gone, blobs included.
+    expect(
+      await db.query.thread.findFirst({ where: eq(thread.id, "thread-personal") }),
+    ).toBeUndefined();
+    expect(await db.query.message.findFirst({ where: eq(message.id, "msg-3") })).toBeUndefined();
+    expect(await e.BLOBS.head(PERSONAL_RAW)).toBeNull();
+
+    // The later mail is whole.
+    expect(await db.query.message.findFirst({ where: eq(message.id, late.id) })).toBeDefined();
+    const kept = await db.query.thread.findFirst({ where: eq(thread.id, late.threadId) });
+    expect(kept?.msgCount).toBe(1);
+    expect(await e.BLOBS.head(late.rawR2Key!)).not.toBeNull();
+    await e.BLOBS.delete(late.rawR2Key!);
+
+    const mb = await personalMailbox();
+    expect(mb?.pendingPurge).toBeNull();
+    expect(mb?.purgeStartedAt).toBeNull();
+  });
+
+  it("treats a pending empty with no start time as starting at the first drain", async () => {
+    const now = new Date();
+    await seedPersonal(now);
+    await db
+      .update(mailbox)
+      .set({ pendingPurge: "empty", purgeStartedAt: null })
+      .where(eq(mailbox.id, PERSONAL_ID));
+
+    await runCronOffline(e, now);
+
+    expect(await personalThreads()).toHaveLength(0);
+    expect(await e.BLOBS.head(PERSONAL_RAW)).toBeNull();
+    expect((await personalMailbox())?.pendingPurge).toBeNull();
   });
 });

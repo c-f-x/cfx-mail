@@ -129,6 +129,21 @@ describe("rules", () => {
     expect(body.rules[0]).toMatchObject({ name: "New", enabled: false });
   });
 
+  it("moves updatedAt on an edit, and only on an edit", async () => {
+    const id = await makeRule();
+    const lastYear = new Date(Date.now() - 365 * 86_400_000);
+    await db().update(rule).set({ updatedAt: lastYear }).where(eq(rule.id, id));
+    const updatedAt = async () =>
+      (await db().query.rule.findFirst({ where: eq(rule.id, id) }))?.updatedAt.getTime();
+
+    await request(asOwner(), "PATCH", `/${id}`, {});
+    expect(await updatedAt()).toBe(Math.floor(lastYear.getTime() / 1000) * 1000);
+
+    const before = Date.now();
+    await request(asOwner(), "PATCH", `/${id}`, { enabled: false });
+    expect(await updatedAt()).toBeGreaterThanOrEqual(Math.floor(before / 1000) * 1000);
+  });
+
   it("treats an empty patch as a no-op (200)", async () => {
     const id = await makeRule();
     const res = await request(asOwner(), "PATCH", `/${id}`, {});

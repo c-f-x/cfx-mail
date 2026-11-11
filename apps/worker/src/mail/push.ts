@@ -1,5 +1,4 @@
 import type { DB } from "@cfmail/db";
-import type { AiPriority } from "@cfmail/db/enums";
 import { mailboxNotify, pushSubscription } from "@cfmail/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { getConfig, setConfig } from "../config.ts";
@@ -59,9 +58,6 @@ export type PushPayload = {
 export interface MailNotification extends Omit<PushPayload, "level"> {
   mailboxId: string;
   userIds: string[];
-  // AI-judged priority of the message; resolved per-user against the mailbox's
-  // per-tier config to pick the notification style (or skip).
-  priority: AiPriority;
 }
 
 // Best-effort push fan-out to every device of the given users; prunes
@@ -126,10 +122,9 @@ export async function pushToUsers(db: DB, userIds: string[], payload: PushPayloa
   }
 }
 
-// Push fan-out gated on each user's per-mailbox config. The message's AI
-// priority selects which configured tier (high/normal/low) applies; each user's
-// tier value maps to a notification style — "none" skips them, otherwise we fan
-// out with the resolved "normal"/"important" style. Never throws (invariant 8).
+// Push fan-out gated on each user's per-mailbox config. Each user's level is a
+// notification style — "none" skips them, otherwise we fan out with the
+// "normal"/"important" style. Never throws (invariant 8).
 export async function notifyMailbox(db: DB, n: MailNotification): Promise<void> {
   try {
     if (n.userIds.length === 0) return;
@@ -137,9 +132,7 @@ export async function notifyMailbox(db: DB, n: MailNotification): Promise<void> 
     const rows = await db
       .select({
         userId: mailboxNotify.userId,
-        high: mailboxNotify.high,
-        normal: mailboxNotify.normal,
-        low: mailboxNotify.low,
+        level: mailboxNotify.level,
       })
       .from(mailboxNotify)
       .where(
@@ -149,9 +142,8 @@ export async function notifyMailbox(db: DB, n: MailNotification): Promise<void> 
 
     const byStyle: Record<"normal" | "important", string[]> = { normal: [], important: [] };
     for (const r of rows) {
-      const style = r[n.priority];
-      if (style === "none") continue;
-      byStyle[style].push(r.userId);
+      if (r.level === "none") continue;
+      byStyle[r.level].push(r.userId);
     }
 
     const payload = {

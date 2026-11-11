@@ -4,11 +4,14 @@ import { KeyRound, MailMinus, ShieldAlert, ShieldQuestion } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button.tsx";
+import { useConfirm } from "@/components/ui/confirm.tsx";
 import { rpc, unwrap } from "@/lib/api.ts";
 import { cn } from "@/lib/cn.ts";
+import { authStatus } from "@/lib/message-trust.ts";
 import type { MessageRow } from "@/lib/queries.ts";
 import { keys } from "@/lib/query-keys.ts";
-import { authStatus, shortFingerprint } from "./sender-lock.tsx";
+import { unsubscribeConfirm } from "@/lib/unsubscribe.ts";
+import { shortFingerprint } from "./sender-lock.tsx";
 
 export function SpamBanner({ msg }: { msg: MessageRow }) {
   if (msg.direction !== "in") return null;
@@ -172,15 +175,22 @@ export function PgpBanner({ msg, readOnly }: { msg: MessageRow; readOnly: boolea
   return null;
 }
 
-// Newsletters carry a List-Unsubscribe header; surface a one-tap opt-out. The
-// worker decides the channel (one-click POST / mailto / link) — a "link" result
-// is an https page we open in a new tab, everything else is handled server-side.
+// Newsletters carry a List-Unsubscribe header; surface an opt-out. The worker
+// decides the channel (one-click POST / mailto / link) from the sender's header,
+// so the target is fetched and confirmed first. A "link" result is an https page
+// we open in a new tab, everything else is handled server-side.
 export function UnsubscribeBanner({ msg, readOnly }: { msg: MessageRow; readOnly: boolean }) {
   const [done, setDone] = useState(false);
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- unsubscribe is a best-effort action; it changes no cached mail data (banner hidden via local `done` state)
+  const confirm = useConfirm();
+  // unsubscribe is a best-effort action; it changes no cached mail data (banner hidden via local `done` state)
   const unsub = useMutation({
-    mutationFn: () => unwrap(rpc.messages[":id"].unsubscribe.$post({ param: { id: msg.id } })),
+    mutationFn: async () => {
+      const target = await unwrap(rpc.messages[":id"].unsubscribe.$get({ param: { id: msg.id } }));
+      if (!(await confirm(unsubscribeConfirm(target)))) return null;
+      return unwrap(rpc.messages[":id"].unsubscribe.$post({ param: { id: msg.id } }));
+    },
     onSuccess: (res) => {
+      if (!res) return;
       if (res.status === "open" && res.url) {
         window.open(res.url, "_blank", "noopener,noreferrer");
         return;

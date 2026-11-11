@@ -43,7 +43,6 @@ export const addressObject = z.object({
   name: z.string().max(200).optional(),
   address: emailAddress,
 });
-export type AddressObject = z.infer<typeof addressObject>;
 
 // RFC 5322 msg-id shape (<id-left@id-right>). The angle-bracket + no-whitespace
 // form blocks CRLF/header injection: these flow verbatim into In-Reply-To /
@@ -80,7 +79,7 @@ const attachmentFilename = z
   .min(1)
   .max(255)
   .refine(
-    (s) => ![...s].some((c) => c.charCodeAt(0) < 0x20 || c === '"' || c === "\\"),
+    (s) => !Array.from(s).some((c) => c.charCodeAt(0) < 0x20 || c === '"' || c === "\\"),
     "invalid filename",
   );
 
@@ -127,6 +126,8 @@ export const bootstrapAdmin = z.object({
   email: emailAddress,
   name: z.string().min(1).max(200),
   password: z.string().min(8).max(200),
+  // The operator's SETUP_TOKEN Worker secret; proves who is doing first-run setup.
+  setupToken: z.string().min(1).max(500),
 });
 
 export const setAuthFromAddress = z.object({
@@ -179,7 +180,6 @@ export const createReminder = z.object({
   remindAt,
   note: z.string().max(500).optional(),
 });
-export type CreateReminderInput = z.infer<typeof createReminder>;
 
 export const updateReminder = z.object({
   remindAt: remindAt.optional(),
@@ -187,7 +187,6 @@ export const updateReminder = z.object({
   // The bell dismisses a fired reminder by setting it done.
   status: z.enum(["done"]).optional(),
 });
-export type UpdateReminderInput = z.infer<typeof updateReminder>;
 
 // Bare Content-ID token (no angle brackets) for an inline image referenced from
 // the HTML body as `cid:<token>`. The server wraps it in <…> for the MIME
@@ -230,7 +229,6 @@ export const createDraft = z.object({
   quote: messageQuoteRef.nullish(),
   attachments: z.array(draftAttachment).max(20).default([]),
 });
-export type CreateDraftInput = z.infer<typeof createDraft>;
 
 export const updateDraft = z.object({
   fromAddress: emailAddress.nullish(),
@@ -246,7 +244,6 @@ export const updateDraft = z.object({
   quote: messageQuoteRef.nullish(),
   attachments: z.array(draftAttachment).max(20).optional(),
 });
-export type UpdateDraftInput = z.infer<typeof updateDraft>;
 
 const labelColor = z.string().regex(/^#[0-9a-f]{6}$/i, "expected hex color (#rrggbb)");
 
@@ -295,12 +292,28 @@ export {
   RULE_OPS,
 } from "@cfmail/db/enums";
 
-const ruleCondition = z.object({
-  field: z.enum(RULE_FIELDS),
-  op: z.enum(RULE_OPS),
-  // Capped to keep regex/wildcard compilation on the inbound hot path bounded.
-  value: z.string().min(1).max(512),
-});
+// A regex condition's pattern, compiled the way inbound evaluation
+// (mail/rules.ts) compiles it: case-insensitive. Null when it does not compile.
+export function compileRuleRegex(pattern: string): RegExp | null {
+  try {
+    return new RegExp(pattern, "i");
+  } catch {
+    return null;
+  }
+}
+
+const ruleCondition = z
+  .object({
+    field: z.enum(RULE_FIELDS),
+    op: z.enum(RULE_OPS),
+    // Capped to keep regex/wildcard compilation on the inbound hot path bounded.
+    value: z.string().min(1).max(512),
+  })
+  // A pattern that does not compile would save and then never match.
+  .refine((c) => c.op !== "regex" || compileRuleRegex(c.value) !== null, {
+    message: "not a valid regular expression",
+    path: ["value"],
+  });
 
 // Actions are a discriminated union on `type`. applyLabel/moveFolder carry a
 // target id; forward carries an external address; autoReply carries the canned
@@ -346,27 +359,31 @@ export const cloneRule = z.object({
   name: z.string().min(1).max(100).optional(),
 });
 
-export const inviteMember = z.object({
-  mailboxId: z.string().min(1),
-  email: emailAddress,
-  read: z.boolean().default(true),
-  write: z.boolean().default(false),
-  manage: z.boolean().default(false),
-});
+// A mailbox's sender name, shown on its outgoing mail. Trimmed; an empty one
+// means no name. The one rule for every route that sets it.
+const senderName = z
+  .string()
+  .max(200)
+  .transform((v) => v.trim() || null);
+
+// How long a temp mailbox lives: an hour unless asked otherwise, at most 7
+// days. The one rule for every route that creates temp mailboxes.
+export const TEMP_TTL_DEFAULT_SECONDS = 3600;
+const tempTtlSeconds = z
+  .number()
+  .int()
+  .min(60)
+  .max(60 * 60 * 24 * 7);
 
 export const createMailbox = z.object({
   domainId: z.string().min(1),
   localPart,
-  displayName: z.string().max(200).optional(),
+  displayName: senderName.optional(),
   type: MailboxType,
   signature: z.string().max(5000).optional(),
   replyTo: emailAddress.optional(),
-  ttlSeconds: z
-    .number()
-    .int()
-    .min(60)
-    .max(60 * 60 * 24 * 30)
-    .optional(),
+  // Only for a temp mailbox; other kinds never expire.
+  ttlSeconds: tempTtlSeconds.optional(),
 });
 
 export const ServiceMode = z.enum(SERVICE_MODES);
@@ -377,13 +394,13 @@ export type ServiceMode = z.infer<typeof ServiceMode>;
 export const createServiceMailbox = z.object({
   domainId: z.string().min(1),
   localPart,
-  displayName: z.string().max(200).optional(),
+  displayName: senderName.optional(),
   mode: ServiceMode.default("duplex"),
 });
 
 // Admin: edit a service mailbox's identity / direction.
 export const updateServiceMailbox = z.object({
-  displayName: z.string().max(200).nullable().optional(),
+  displayName: senderName.nullable().optional(),
   mode: ServiceMode.optional(),
 });
 
@@ -393,7 +410,13 @@ export const adminCreateMailbox = z.object({
   localPart,
   ownerUserId: z.string().min(1),
   type: MailboxType,
-  displayName: z.string().max(200).optional(),
+  displayName: senderName.optional(),
+});
+
+// Admin: delete a user. The mailboxes named here go with them; every other
+// mailbox they own is handed to the admin who deletes them.
+export const deleteUser = z.object({
+  deleteMailboxIds: z.array(z.string().min(1)).max(1000).default([]),
 });
 
 // Admin: hand a mailbox to a different owner and/or switch it between the
@@ -448,7 +471,17 @@ export const createBlockEntry = z
         : domainName.safeParse(v.value).success,
     { message: "value must be a valid email or domain", path: ["value"] },
   );
-export type CreateBlockEntryInput = z.infer<typeof createBlockEntry>;
+
+// GET /api/threads/:id/bodies: the messages whose bodies to render, as one
+// comma-separated parameter. The cap bounds the work of one request; the web
+// app splits a longer conversation into several requests.
+export const MAX_BODIES_PER_REQUEST = 50;
+export const threadBodiesQuery = z.object({
+  ids: z
+    .string()
+    .transform((s) => [...new Set(s.split(",").map((id) => id.trim()))].filter(Boolean))
+    .pipe(z.array(z.string().max(100)).min(1).max(MAX_BODIES_PER_REQUEST)),
+});
 
 // A reader requesting a sender be blocked. The sender identity comes from the
 // message (server-side); only an optional note is supplied.
@@ -486,16 +519,13 @@ export const pgpMode = z.enum(PGP_MODES);
 export type PgpMode = z.infer<typeof pgpMode>;
 
 export const updateMailboxSettings = z.object({
-  displayName: z.string().max(200).nullable().optional(),
+  displayName: senderName.nullable().optional(),
   signature: z.string().max(5000).nullable().optional(),
   replyTo: z
     .union([emailAddress, z.literal("")])
     .nullable()
     .optional(),
   spamFilter: spamFilterLevel.optional(),
-  spamAiTokenCap: z.number().int().positive().max(100_000_000).nullable().optional(),
-  aiFeatures: z.boolean().optional(),
-  aiTokenCap: z.number().int().positive().max(100_000_000).nullable().optional(),
   pgpMode: pgpMode.optional(),
   pgpAutoFetch: z.boolean().optional(),
   excludeFromAll: z.boolean().optional(),
@@ -507,7 +537,6 @@ export const importPgpKey = z.object({
   privateKey: z.string().min(1).max(200_000),
   passphrase: z.string().max(1000).optional(),
 });
-export type ImportPgpKeyInput = z.infer<typeof importPgpKey>;
 
 // Add a correspondent public key. `email` is optional — if omitted the first
 // address in the key's user IDs is used.
@@ -515,12 +544,9 @@ export const addContactKey = z.object({
   publicKey: z.string().min(1).max(200_000),
   email: emailAddress.optional(),
 });
-export type AddContactKeyInput = z.infer<typeof addContactKey>;
 
 // Toggle a stored contact key's verified flag (owner confirmed the fingerprint).
 export const verifyContactKey = z.object({ verified: z.boolean() });
-export type VerifyContactKeyInput = z.infer<typeof verifyContactKey>;
-export type UpdateMailboxSettingsInput = z.infer<typeof updateMailboxSettings>;
 
 export const grantMember = z.object({
   mailboxId: z.string().min(1),
@@ -577,27 +603,111 @@ export const scheduleDraft = z.object({
     .refine((ms) => ms < Date.now() + MAX_SCHEDULE_AHEAD_MS, "too far in the future"),
   payload: sendMessage,
 });
-export type ScheduleDraftInput = z.infer<typeof scheduleDraft>;
+
+// The headers a project may add to a service send: one-click unsubscribe
+// (RFC 2369, RFC 8058), which Gmail and Yahoo require of bulk senders. Names
+// are matched case-insensitively and come out canonical. The values reach the
+// outbound headers and the archived .eml verbatim, so they are held to printable
+// ASCII with no CR or LF. The rules and the 2,048 limit are Cloudflare Email
+// Sending's own for these headers, checked here so the caller gets a 400.
+const LIST_UNSUBSCRIBE = "List-Unsubscribe";
+const LIST_UNSUBSCRIBE_POST = "List-Unsubscribe-Post";
+const ONE_CLICK = "List-Unsubscribe=One-Click";
+const HEADER_VALUE_MAX = 2_048;
+type ServiceHeaderName = typeof LIST_UNSUBSCRIBE | typeof LIST_UNSUBSCRIBE_POST;
+const SERVICE_HEADER_NAMES = new Map<string, ServiceHeaderName>([
+  [LIST_UNSUBSCRIBE.toLowerCase(), LIST_UNSUBSCRIBE],
+  [LIST_UNSUBSCRIBE_POST.toLowerCase(), LIST_UNSUBSCRIBE_POST],
+]);
+// One or two <uri> entries separated by a comma. A uri is printable ASCII
+// without space, "<" or ">".
+const unsubscribeEntries = /^<([!-;=?-~]+)>(?: *, *<([!-;=?-~]+)>)?$/;
+
+// An https URL is a host name (no user info, no IP literal), an optional port,
+// then an optional path, query or fragment.
+const httpsUri =
+  /^https:\/\/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*(?::\d{1,5})?(?:[/?#].*)?$/i;
+const mailtoUri = /^mailto:[^@?]+@[^@?.]+(?:\.[^@?.]+)+(?:\?.*)?$/i;
+
+function unsubscribeUriKind(uri: string): "https" | "mailto" | null {
+  if (httpsUri.test(uri)) return "https";
+  if (mailtoUri.test(uri)) return "mailto";
+  return null;
+}
+
+const serviceHeaders = z.record(z.string(), z.string()).transform((given, ctx) => {
+  const out: Partial<Record<ServiceHeaderName, string>> = {};
+  for (const [name, value] of Object.entries(given)) {
+    const canonical = SERVICE_HEADER_NAMES.get(name.toLowerCase());
+    if (!canonical) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Only List-Unsubscribe and List-Unsubscribe-Post may be set as headers.",
+      });
+      return z.NEVER;
+    }
+    if (out[canonical] !== undefined) {
+      ctx.addIssue({ code: "custom", message: `${canonical} may be given only once.` });
+      return z.NEVER;
+    }
+    if (/[\r\n]/.test(value)) {
+      ctx.addIssue({ code: "custom", message: "A header value must not contain a line break." });
+      return z.NEVER;
+    }
+    out[canonical] = value;
+  }
+
+  const list = out[LIST_UNSUBSCRIBE];
+  let hasHttps = false;
+  if (list !== undefined) {
+    const m = list.length <= HEADER_VALUE_MAX ? unsubscribeEntries.exec(list) : null;
+    const kinds = m ? [m[1], m[2]].filter((u) => u !== undefined).map(unsubscribeUriKind) : [];
+    if (!m || kinds.includes(null)) {
+      ctx.addIssue({
+        code: "custom",
+        message: `List-Unsubscribe must be one or two <https://…> or <mailto:…> entries, separated by a comma, in at most ${HEADER_VALUE_MAX} characters.`,
+      });
+      return z.NEVER;
+    }
+    hasHttps = kinds.includes("https");
+  }
+
+  const post = out[LIST_UNSUBSCRIBE_POST];
+  if (post !== undefined) {
+    if (post !== ONE_CLICK) {
+      ctx.addIssue({
+        code: "custom",
+        message: `List-Unsubscribe-Post must be exactly ${ONE_CLICK}.`,
+      });
+      return z.NEVER;
+    }
+    if (!hasHttps) {
+      ctx.addIssue({
+        code: "custom",
+        message: "List-Unsubscribe-Post needs a List-Unsubscribe with an https address.",
+      });
+      return z.NEVER;
+    }
+  }
+  return out;
+});
 
 // Key-authed send from a service mailbox — the mailbox is resolved from the
 // bearer key; attachments (pre-uploaded R2 keys) and reply/forward quoting
 // (resolved from a stored message the key holder can't reference) are omitted.
-export const serviceSend = sendMessage.omit({
-  mailboxId: true,
-  attachments: true,
-  quote: true,
-});
-export type ServiceSendInput = z.infer<typeof serviceSend>;
+export const serviceSend = sendMessage
+  .omit({
+    mailboxId: true,
+    attachments: true,
+    quote: true,
+  })
+  .extend({ headers: serviceHeaders.optional() });
+export type ServiceSendHeaders = NonNullable<z.infer<typeof serviceSend>["headers"]>;
 
 export const createTempMailbox = z.object({
   domainId: z.string().min(1),
-  displayName: z.string().max(200).optional(),
-  ttlSeconds: z
-    .number()
-    .int()
-    .min(60)
-    .max(60 * 60 * 24 * 7)
-    .default(3600),
+  displayName: senderName.optional(),
+  ttlSeconds: tempTtlSeconds.default(TEMP_TTL_DEFAULT_SECONDS),
 });
 
 // ─── Advanced search ────────────────────────────────────────────────────────

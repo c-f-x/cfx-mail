@@ -11,7 +11,13 @@ import {
   Perm,
   revoke,
 } from "@cfmail/shared/permissions";
-import { sendMessage, splitMessageIds } from "@cfmail/shared/schemas";
+import {
+  createRule,
+  sendMessage,
+  serviceSend,
+  splitMessageIds,
+  updateRule,
+} from "@cfmail/shared/schemas";
 import { describe, expect, it } from "vitest";
 
 describe("message flags", () => {
@@ -104,5 +110,138 @@ describe("msg-id lists", () => {
       references: ["<a@x>,<b@y>", "<c@z>"],
     });
     expect(parsed.references).toEqual(["<a@x>", "<b@y>", "<c@z>"]);
+  });
+});
+
+describe("service send headers", () => {
+  const send = (headers: unknown) =>
+    serviceSend.safeParse({ to: [{ address: "peer@example.com" }], subject: "Digest", headers });
+  const HTTPS = "<https://app.example.org/unsubscribe?t=abc123>";
+  const MAILTO = "<mailto:unsubscribe@example.org?subject=unsubscribe>";
+  const ONE_CLICK = "List-Unsubscribe=One-Click";
+
+  it("takes List-Unsubscribe and List-Unsubscribe-Post under their canonical names", () => {
+    const parsed = send({ "List-Unsubscribe": HTTPS, "List-Unsubscribe-Post": ONE_CLICK });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.headers).toEqual({
+      "List-Unsubscribe": HTTPS,
+      "List-Unsubscribe-Post": ONE_CLICK,
+    });
+  });
+
+  it("reads the names case-insensitively", () => {
+    const parsed = send({ "list-unsubscribe": HTTPS, "LIST-UNSUBSCRIBE-POST": ONE_CLICK });
+    expect(parsed.data?.headers).toEqual({
+      "List-Unsubscribe": HTTPS,
+      "List-Unsubscribe-Post": ONE_CLICK,
+    });
+  });
+
+  it("takes an https and a mailto entry together, or a mailto alone", () => {
+    expect(send({ "List-Unsubscribe": `${HTTPS}, ${MAILTO}` }).success).toBe(true);
+    expect(send({ "List-Unsubscribe": `${MAILTO},${HTTPS}` }).success).toBe(true);
+    expect(send({ "List-Unsubscribe": MAILTO }).success).toBe(true);
+  });
+
+  it("refuses every other header name", () => {
+    for (const name of ["Bcc", "From", "X-Mailer", "List-Id", "Reply-To", "List-Unsubscribe2"]) {
+      expect(send({ [name]: "x" }).success, name).toBe(false);
+    }
+  });
+
+  it("refuses the same header given twice in different case", () => {
+    expect(send({ "List-Unsubscribe": HTTPS, "list-unsubscribe": MAILTO }).success).toBe(false);
+  });
+
+  it("refuses a CR or LF anywhere, so no header can be injected", () => {
+    expect(send({ "List-Unsubscribe": `${HTTPS}\r\nBcc: victim@example.com` }).success).toBe(false);
+    expect(send({ "List-Unsubscribe": `${HTTPS}\n` }).success).toBe(false);
+    expect(send({ "List-Unsubscribe": "<https://app.example.org/u?\rx>" }).success).toBe(false);
+    expect(
+      send({ "List-Unsubscribe": HTTPS, "List-Unsubscribe-Post": `${ONE_CLICK}\r\nX: y` }).success,
+    ).toBe(false);
+    expect(send({ "List-Unsubscribe\r\nBcc": HTTPS }).success).toBe(false);
+  });
+
+  it("refuses an http address, a bare URL and other schemes", () => {
+    for (const value of [
+      "<http://app.example.org/unsubscribe>",
+      "https://app.example.org/unsubscribe",
+      "<javascript:alert(1)>",
+      "<ftp://example.org/u>",
+      "<https://>",
+      "<mailto:not-an-address>",
+      "<https://app.example.org/a b>",
+      "<https://app.example.org/ünsubscribe>",
+      "",
+    ]) {
+      expect(send({ "List-Unsubscribe": value }).success, value).toBe(false);
+    }
+  });
+
+  it("refuses more than two entries and a value over 2,048 characters", () => {
+    expect(send({ "List-Unsubscribe": `${HTTPS}, ${MAILTO}, ${HTTPS}` }).success).toBe(false);
+    const long = `<https://app.example.org/u?t=${"a".repeat(2_048)}>`;
+    expect(send({ "List-Unsubscribe": long }).success).toBe(false);
+  });
+
+  it("refuses List-Unsubscribe-Post with any other value", () => {
+    for (const value of ["list-unsubscribe=one-click", "List-Unsubscribe=One-Click ", "yes"]) {
+      expect(send({ "List-Unsubscribe": HTTPS, "List-Unsubscribe-Post": value }).success).toBe(
+        false,
+      );
+    }
+  });
+
+  it("refuses List-Unsubscribe-Post without an https List-Unsubscribe", () => {
+    expect(send({ "List-Unsubscribe-Post": ONE_CLICK }).success).toBe(false);
+    expect(send({ "List-Unsubscribe": MAILTO, "List-Unsubscribe-Post": ONE_CLICK }).success).toBe(
+      false,
+    );
+  });
+
+  it("refuses a header value that is not a string", () => {
+    expect(send({ "List-Unsubscribe": ["<https://app.example.org/u>"] }).success).toBe(false);
+  });
+
+  it("is not part of the web app's own send", () => {
+    const parsed = sendMessage.parse({
+      mailboxId: "mailbox-1",
+      to: [{ address: "peer@example.com" }],
+      headers: { "List-Unsubscribe": HTTPS },
+    });
+    expect(parsed).not.toHaveProperty("headers");
+  });
+});
+
+// A rule with one subject condition.
+const ruleBody = (op: string, value: string) => ({
+  mailboxId: "mailbox-1",
+  name: "rule",
+  conditions: [{ field: "subject", op, value }],
+  actions: [{ type: "markRead" }],
+});
+
+describe("rule conditions", () => {
+  it("refuses a regex that does not compile, naming the condition's value", () => {
+    const res = createRule.safeParse(ruleBody("regex", "invoice (#\\d+"));
+    expect(res.success).toBe(false);
+    expect(res.error?.issues).toEqual([
+      expect.objectContaining({
+        path: ["conditions", 0, "value"],
+        message: "not a valid regular expression",
+      }),
+    ]);
+  });
+
+  it("refuses it when a rule is edited too", () => {
+    expect(updateRule.safeParse({ conditions: ruleBody("regex", "[a-z").conditions }).success).toBe(
+      false,
+    );
+  });
+
+  it("accepts a regex that compiles, and the same text under any other operator", () => {
+    expect(createRule.safeParse(ruleBody("regex", "invoice #\\d+")).success).toBe(true);
+    expect(createRule.safeParse(ruleBody("contains", "invoice (#\\d+")).success).toBe(true);
   });
 });

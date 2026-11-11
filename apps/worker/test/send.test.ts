@@ -1,13 +1,13 @@
-import { attachment, draft, message, thread } from "@cfmail/db/schema";
+import { attachment, draft, mailbox, message, thread } from "@cfmail/db/schema";
 import { Flag } from "@cfmail/shared/flags";
 import type { SendMessageInput } from "@cfmail/shared/schemas";
 import { eq } from "drizzle-orm";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { runCron } from "../src/cron.ts";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../src/env.ts";
 import { AppError } from "../src/errors.ts";
 import { sendFromMailbox } from "../src/mail/send.ts";
 import { applyMigrationsOnce, db, e, resetDb } from "./support/app.ts";
+import { runCronOffline } from "./support/cron.ts";
 import { MAILBOX_ID, OWNER_ID, seedBase, seedThread } from "./support/seed.ts";
 
 // The EMAIL binding has no local simulation, so tests swap in a fake. The
@@ -117,6 +117,92 @@ describe("sendFromMailbox — success", () => {
   });
 });
 
+describe("sendFromMailbox — mailbox Reply-To", () => {
+  it("sends from a mailbox that has a Reply-To address, and passes it on", async () => {
+    await db()
+      .update(mailbox)
+      .set({ replyTo: "replies@example.com" })
+      .where(eq(mailbox.id, MAILBOX_ID));
+    const email = emailOk();
+
+    const res = await sendFromMailbox(envWith(email), db(), OWNER_ID, input());
+
+    expect(email.send).toHaveBeenCalledTimes(1);
+    expect(email.send.mock.calls[0]![0]).toMatchObject({ replyTo: "replies@example.com" });
+    const row = await db().query.message.findFirst({ where: eq(message.id, res.messageId) });
+    const raw = await (await e.BLOBS.get(row!.rawR2Key!))!.text();
+    expect(raw).toMatch(/^Reply-To: <?replies@example\.com>?\r?$/m);
+  });
+});
+
+describe("sendFromMailbox — platform limits", () => {
+  it("sends the maximum number of attachments the composer allows", async () => {
+    const attachments = await Promise.all(
+      Array.from({ length: 20 }, async (_, i) => ({
+        r2Key: await putDraftBlob(`f${i}.txt`, `file ${i}`, "text/plain"),
+        filename: `f${i}.txt`,
+        contentType: "text/plain",
+      })),
+    );
+    const email = emailOk();
+
+    const res = await sendFromMailbox(envWith(email), db(), OWNER_ID, input({ attachments }));
+
+    expect(email.send).toHaveBeenCalledTimes(1);
+    const rows = await db().query.attachment.findMany({
+      where: eq(attachment.messageId, res.messageId),
+    });
+    expect(rows).toHaveLength(20);
+  });
+
+  it("refuses more than 50 recipients in total before anything is stored or sent", async () => {
+    const many = (prefix: string, n: number) =>
+      Array.from({ length: n }, (_, i) => ({ address: `${prefix}${i}@elsewhere.test` }));
+    const email = emailOk();
+
+    const err = await sendFromMailbox(
+      envWith(email),
+      db(),
+      OWNER_ID,
+      input({ to: many("to", 20), cc: many("cc", 20), bcc: many("bcc", 11) }),
+    ).catch((caught) => caught);
+
+    expect(err).toBeInstanceOf(AppError);
+    expect((err as AppError).code).toBe("unprocessable");
+    expect((err as AppError).message).toContain("50 recipients");
+    expect(email.send).not.toHaveBeenCalled();
+    expect(await db().query.message.findMany()).toHaveLength(0);
+    expect(await db().query.thread.findMany()).toHaveLength(0);
+    expect(await sentBlobKeys()).toHaveLength(0);
+  });
+
+  it("refuses a message over 5 MiB before anything is stored or sent", async () => {
+    const key = await putDraftBlob(
+      "big.bin",
+      "x".repeat(4 * 1024 * 1024),
+      "application/octet-stream",
+    );
+    const email = emailOk();
+
+    const err = await sendFromMailbox(
+      envWith(email),
+      db(),
+      OWNER_ID,
+      input({
+        attachments: [{ r2Key: key, filename: "big.bin", contentType: "application/octet-stream" }],
+      }),
+    ).catch((caught) => caught);
+
+    expect(err).toBeInstanceOf(AppError);
+    expect((err as AppError).code).toBe("unprocessable");
+    expect((err as AppError).message).toContain("5 MB");
+    expect(email.send).not.toHaveBeenCalled();
+    expect(await db().query.message.findMany()).toHaveLength(0);
+    expect(await db().query.thread.findMany()).toHaveLength(0);
+    expect(await sentBlobKeys()).toHaveLength(0);
+  });
+});
+
 describe("sendFromMailbox — delivery failure cleanup", () => {
   it("throws 502 and leaves no orphan row, blob, or empty thread", async () => {
     const err = await sendFromMailbox(envWith(emailFail()), db(), OWNER_ID, input()).then(
@@ -180,6 +266,17 @@ describe("sendFromMailbox — delivery failure cleanup", () => {
   });
 });
 
+// A failed dispatch must be logged with the draft id, the attempt count and
+// the cause. Silences the line so a passing run prints nothing.
+function expectFailureLogged(logged: ReturnType<typeof vi.spyOn>, attempt: number): void {
+  expect(logged).toHaveBeenCalledWith(
+    expect.stringMatching(
+      new RegExp(`^scheduled send failed for draft draft-.+ \\(attempt ${attempt}/3\\)$`),
+    ),
+    expect.objectContaining({ message: expect.stringContaining("delivery exploded") }),
+  );
+}
+
 describe("scheduled-send dispatch (cron)", () => {
   const payload = {
     mailboxId: MAILBOX_ID,
@@ -187,6 +284,10 @@ describe("scheduled-send dispatch (cron)", () => {
     subject: "Later",
     text: "deferred hello",
   };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   async function seedScheduledDraft(attempts = 0): Promise<string> {
     const id = `draft-${crypto.randomUUID()}`;
@@ -205,7 +306,7 @@ describe("scheduled-send dispatch (cron)", () => {
 
   it("dispatches a due draft: message persisted, draft deleted", async () => {
     const id = await seedScheduledDraft();
-    await runCron(envWith(emailOk()), new Date());
+    await runCronOffline(envWith(emailOk()), new Date());
 
     expect(await db().query.draft.findFirst({ where: eq(draft.id, id) })).toBeUndefined();
     const rows = await db().query.message.findMany();
@@ -215,13 +316,16 @@ describe("scheduled-send dispatch (cron)", () => {
 
   it("a failing dispatch keeps the draft scheduled for retry and rolls back the send", async () => {
     const id = await seedScheduledDraft();
-    await runCron(envWith(emailFail()), new Date());
+    const now = new Date();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await runCronOffline(envWith(emailFail()), now);
+    expectFailureLogged(logged, 1);
 
     const row = await db().query.draft.findFirst({ where: eq(draft.id, id) });
     expect(row).toBeDefined();
     expect(row?.scheduledAttempts).toBe(1);
-    // Still in the past → next tick retries it.
-    expect(row?.scheduledFor).not.toBeNull();
+    // The claim's lease is released → next tick retries it.
+    expect(row!.scheduledFor!.getTime()).toBeLessThanOrEqual(now.getTime());
     expect(row?.scheduledPayload).not.toBeNull();
     // The failed attempt left no partial send behind (retry safety).
     expect(await db().query.message.findMany()).toHaveLength(0);
@@ -230,8 +334,10 @@ describe("scheduled-send dispatch (cron)", () => {
 
   it("a retry after a failed tick sends exactly once", async () => {
     const id = await seedScheduledDraft();
-    await runCron(envWith(emailFail()), new Date());
-    await runCron(envWith(emailOk()), new Date());
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await runCronOffline(envWith(emailFail()), new Date());
+    expectFailureLogged(logged, 1);
+    await runCronOffline(envWith(emailOk()), new Date());
 
     expect(await db().query.draft.findFirst({ where: eq(draft.id, id) })).toBeUndefined();
     expect(await db().query.message.findMany()).toHaveLength(1);
@@ -239,7 +345,9 @@ describe("scheduled-send dispatch (cron)", () => {
 
   it("exhausted retries revert the row to an editable draft with the error flagged", async () => {
     const id = await seedScheduledDraft(2); // one failure away from the cap of 3
-    await runCron(envWith(emailFail()), new Date());
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await runCronOffline(envWith(emailFail()), new Date());
+    expectFailureLogged(logged, 3);
 
     const row = await db().query.draft.findFirst({ where: eq(draft.id, id) });
     expect(row).toBeDefined();

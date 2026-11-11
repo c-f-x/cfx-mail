@@ -144,7 +144,7 @@ function BlockRequestRow({
                   destructive: true,
                 })
               )
-                run("dismiss", "Removed");
+                void run("dismiss", "Removed");
             }}
           >
             Delete
@@ -316,7 +316,7 @@ function ProtectedDomainsPanel() {
         value={domains}
         onChange={setDraft}
         ariaLabel="Protected domains"
-        placeholder="gmail.com, proton.me…"
+        placeholder="example.com, example.org…"
         normalize={normalizeDomain}
       />
       <div className="mt-3 flex justify-end gap-2">

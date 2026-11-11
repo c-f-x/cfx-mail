@@ -1,6 +1,5 @@
 import { attachment, domain, mailbox, message } from "@cfmail/db/schema";
 import { serviceSend } from "@cfmail/shared/schemas";
-import { zValidator } from "@hono/zod-validator";
 import { and, asc, desc, eq, gt, or } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
@@ -11,8 +10,14 @@ import type { AppBindings } from "../env.ts";
 import { parseMime } from "../mail/mime.ts";
 import { sendFromMailbox } from "../mail/send.ts";
 import { mailboxNotDeletePending } from "../permissions.ts";
+import { enforceRateLimit } from "../rate-limit.ts";
+import { zValidator } from "./validate.ts";
 
 const PAGE_SIZE = 50;
+// Sends per service mailbox per hour. High enough for a project's own mail
+// (sign-in links and the like), low enough that a leaked key is not an open
+// relay on the sending reputation every project shares.
+const SERVICE_SEND_LIMIT_PER_HOUR = 600;
 
 // SHA-256 hex of a string — used to look up a service mailbox by its bearer key
 // without storing the key itself.
@@ -71,6 +76,7 @@ export function svcRoutes() {
       const db = dbFromCtx(c);
       const mb = c.get("serviceMailbox")!;
       const body = c.req.valid("json");
+      await enforceRateLimit(db, "svc-send", mb.id, SERVICE_SEND_LIMIT_PER_HOUR, 60 * 60 * 1000);
       const result = await sendFromMailbox(c.env, db, null, { ...body, mailboxId: mb.id });
       return c.json(result, 201);
     })

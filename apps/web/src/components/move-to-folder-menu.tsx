@@ -16,6 +16,8 @@ interface Props {
   mailboxId: string;
   size?: "icon" | "icon-sm";
   tooltip?: string;
+  /** A visible word beside the icon from 1024 px (the reading toolbar). */
+  text?: string;
   // When viewing inside a folder, lets the user move the thread back out to the
   // mailbox ("remove from folder"). Only meaningful for a single thread.
   currentFolderId?: string;
@@ -27,6 +29,7 @@ export function MoveToFolderMenu({
   mailboxId,
   size = "icon",
   tooltip,
+  text,
   currentFolderId,
   onMoved,
 }: Props) {
@@ -34,8 +37,14 @@ export function MoveToFolderMenu({
   const trigger = (
     <PopoverTrigger
       render={
-        <Button variant="ghost" size={size} aria-label="Move to folder">
+        <Button
+          variant="ghost"
+          size={size}
+          aria-label="Move to folder"
+          className={text ? "text-[13px] lg:w-auto lg:gap-1.5 lg:px-2.5" : undefined}
+        >
           <FolderInput />
+          {text && <span className="hidden lg:inline">{text}</span>}
         </Button>
       }
     />
@@ -76,7 +85,7 @@ function MovePopover({ threadIds, mailboxId, currentFolderId, onMoved }: Props) 
     if (!currentFolderId || threadIds.length !== 1) return;
     unfile.mutate(
       { folderId: currentFolderId, threadId: threadIds[0]!, mailboxId },
-      { onSuccess: () => onMoved?.("Mailbox") },
+      { onSuccess: () => onMoved?.("the account") },
     );
   }
 
@@ -136,7 +145,7 @@ function MovePopover({ threadIds, mailboxId, currentFolderId, onMoved }: Props) 
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-accent disabled:opacity-50"
             >
               <Inbox className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <span className="flex-1 truncate text-left">Move back to mailbox</span>
+              <span className="flex-1 truncate text-left">Move back to the account</span>
             </button>
           </li>
         )}

@@ -1,6 +1,7 @@
 {
   "name": "@cfmail/shared",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {
@@ -12,7 +13,7 @@
   },
   "dependencies": {
     "@cfmail/db": "workspace:*",
-    "zod": "4.6.4"
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "typescript": "7.0.2"

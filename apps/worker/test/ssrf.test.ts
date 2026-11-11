@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { isBlockedHost } from "../src/ssrf.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { isBlockedHost, safeRedirectFetch } from "../src/ssrf.ts";
 
 describe("isBlockedHost — hostnames", () => {
   it.each(["localhost", "sub.localhost", "printer.local", "db.internal"])("blocks %s", (h) => {
@@ -107,5 +107,80 @@ describe("isBlockedHost — NAT64 (64:ff9b::/96)", () => {
 
   it.each(["64:ff9b::8.8.8.8", "64:ff9b::808:808"])("allows NAT64 public %s", (h) => {
     expect(isBlockedHost(h)).toBe(false);
+  });
+});
+
+describe("isBlockedHost — trailing-dot names", () => {
+  it.each(["localhost.", "sub.localhost.", "printer.local.", "foo.internal.", "db.internal.."])(
+    "blocks %s like its dotless form",
+    (h) => {
+      expect(isBlockedHost(h)).toBe(true);
+    },
+  );
+
+  it.each(["127.0.0.1.", "10.0.0.1.", "169.254.169.254."])("blocks the IPv4 literal %s", (h) => {
+    expect(isBlockedHost(h)).toBe(true);
+  });
+
+  it.each(["example.com.", "cdn.example.org."])("still allows %s", (h) => {
+    expect(isBlockedHost(h)).toBe(false);
+  });
+});
+
+describe("isBlockedHost — more reserved ranges", () => {
+  it.each([
+    "192.0.0.1", // 192.0.0.0/24, IETF protocol assignments
+    "192.0.0.255",
+    "198.18.0.1", // 198.18.0.0/15, benchmarking
+    "198.19.255.255",
+    "2002::1", // 6to4
+    "2002:7f00:1::1", // 6to4 wrapping 127.0.0.1
+    "[2002:c0a8:101::1]",
+  ])("blocks %s", (h) => {
+    expect(isBlockedHost(h)).toBe(true);
+  });
+
+  it.each([
+    "192.0.1.1", // just outside 192.0.0.0/24
+    "192.0.2.1", // documentation range, not in the brief
+    "198.17.255.255", // just below 198.18.0.0/15
+    "198.20.0.1", // just above
+    "2001:db8::1",
+    "2003::1", // just outside 2002::/16
+  ])("allows %s", (h) => {
+    expect(isBlockedHost(h)).toBe(false);
+  });
+});
+
+describe("safeRedirectFetch deadline", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("gives up on a host that never answers when the caller set no deadline", async () => {
+    // Push notifications and one-click unsubscribe call this without a signal.
+    vi.stubGlobal(
+      "fetch",
+      (_url: URL, init?: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+        }),
+    );
+    const started = Date.now();
+    await expect(
+      safeRedirectFetch(new URL("https://slow.example/"), { method: "POST" }, 5, 50),
+    ).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it("keeps a deadline the caller set", async () => {
+    let seen: AbortSignal | undefined;
+    vi.stubGlobal("fetch", async (_url: URL, init?: RequestInit) => {
+      seen = init?.signal ?? undefined;
+      return new Response("ok");
+    });
+    const own = new AbortController();
+    await safeRedirectFetch(new URL("https://fast.example/"), { signal: own.signal });
+    expect(seen).toBe(own.signal);
   });
 });

@@ -43,7 +43,9 @@ export function useThreadListMutation<V, R = unknown>({
         onApply?.(vars);
         return {};
       }
+      // The All accounts lists hold this account's threads too (see listRoots).
       await qc.cancelQueries({ queryKey: keys.threadsRoot(mailboxId) });
+      if (mailboxId !== "all") await qc.cancelQueries({ queryKey: keys.threadsRoot("all") });
       const snapshot = snapshotMailboxThreads(qc, mailboxId);
       optimistic(vars, qc);
       onApply?.(vars);

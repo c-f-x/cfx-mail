@@ -1,16 +1,16 @@
-import { message, reminder } from "@cfmail/db/schema";
+import { message, reminder, thread } from "@cfmail/db/schema";
 import { Perm } from "@cfmail/shared/permissions";
 import type { ReminderListDto } from "@cfmail/shared/responses";
 import { createReminder, updateReminder } from "@cfmail/shared/schemas";
-import { zValidator } from "@hono/zod-validator";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { dbFromCtx } from "../db.ts";
 import type { AppBindings } from "../env.ts";
 import { requireUser } from "../middleware.ts";
-import { requirePerm } from "../permissions.ts";
+import { requireEntityAccess } from "../permissions.ts";
 import { serializeReminder } from "./serialize.ts";
+import { zValidator } from "./validate.ts";
 
 export function remindersRoutes() {
   const r = new Hono<AppBindings>()
@@ -32,7 +32,12 @@ export function remindersRoutes() {
       const db = dbFromCtx(c);
       const user = c.get("user")!;
       const body = c.req.valid("json");
-      await requirePerm(db, user.id, body.mailboxId, Perm.READ);
+      // The thread's real mailbox decides access, and it must be the one named:
+      // the subject copied below is that thread's.
+      const target = await requireEntityAccess(db, user.id, thread, body.threadId, Perm.READ);
+      if (target.mailboxId !== body.mailboxId) {
+        throw new HTTPException(404, { message: "not found" });
+      }
 
       // Snapshot the latest message's subject so the bell + push need no join.
       const latest = await db

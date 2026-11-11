@@ -1,53 +1,36 @@
-import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { MessageView } from "@/components/message-view.tsx";
-import { ThreadList } from "@/components/thread-list.tsx";
-import { MessageSkeleton } from "@/components/ui.tsx";
-import { mailboxesQuery, threadQuery } from "@/lib/queries.ts";
-import { useThreadFeed } from "@/lib/use-feeds.ts";
+import { MailboxListPane, MailLayout, ThreadPane } from "@/components/mail-layout.tsx";
+import { threadQuery } from "@/lib/queries.ts";
 
 export const Route = createFileRoute("/app/m/$mailboxId/t/$threadId")({
-  loader: ({ params, context }) =>
-    context.queryClient.ensureQueryData(threadQuery(params.threadId)),
+  // Start the fetch without waiting: the panes draw their own loading and
+  // error states, so the page never sits blank on a slow or failing server.
+  loader: ({ params, context }) => {
+    void context.queryClient.prefetchQuery(threadQuery(params.threadId));
+  },
   component: ThreadPage,
 });
 
 function ThreadPage() {
   const { mailboxId, threadId } = Route.useParams();
   const { view, unread } = Route.useSearch();
-  const feed = useThreadFeed(mailboxId, view, true, unread);
-  const { data: threadData } = useQuery(threadQuery(threadId));
-  const { data: mailboxesData } = useQuery(mailboxesQuery);
-  const mailbox = mailboxesData?.mailboxes.find((m) => m.id === mailboxId);
-
   return (
-    <div className="flex h-full">
-      <aside className="hidden w-[360px] shrink-0 border-r md:block">
-        <ThreadList
+    <MailLayout
+      list={
+        <MailboxListPane
           mailboxId={mailboxId}
           view={view}
           unread={unread}
-          threads={feed.items}
-          loading={feed.loading}
-          hasMore={feed.hasMore}
-          loadingMore={feed.loadingMore}
-          loadMore={feed.loadMore}
           selectedThreadId={threadId}
-          expiresAt={mailbox?.expiresAt ?? null}
         />
-      </aside>
-      <section className="flex flex-1 flex-col overflow-hidden">
-        {threadData ? (
-          <MessageView
-            thread={threadData.thread}
-            messages={threadData.messages}
-            view={view}
-            unread={unread}
-          />
-        ) : (
-          <MessageSkeleton />
-        )}
-      </section>
-    </div>
+      }
+    >
+      <ThreadPane
+        threadId={threadId}
+        scope={{ kind: "mailbox", mailboxId }}
+        view={view}
+        unread={unread}
+      />
+    </MailLayout>
   );
 }

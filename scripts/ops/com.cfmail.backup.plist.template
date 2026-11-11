@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Daily backup of one cfmail deployment. A template: nothing here is installed.
+  Fill the placeholders, save the result as
+  ~/Library/LaunchAgents/com.cfmail.backup.<name>.plist, and follow
+  docs/runbooks/backup-and-restore.md ("Run it every day").
+
+  __NAME__        the deployment's name in the site file (AGENTS.md, section 2)
+  __REPO__        absolute path of this repository's checkout
+  __SITE__        absolute path of the site checkout that holds cf-mail.jsonc
+  __BACKUP_ROOT__ absolute path of the folder that holds the backups
+  __KEEP__        how many dated copies to keep, for example 14
+  __HOUR__        hour to run, 0 to 23, local time
+  __MINUTE__      minute to run, 0 to 59
+  __PATH__        PATH that finds node, pnpm and trash (output of `echo $PATH` in your terminal)
+  __LOG_DIR__     absolute path of a folder for the log, for example /Users/<you>/Library/Logs
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cfmail.backup.__NAME__</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__REPO__/scripts/ops/backup-daily.sh</string>
+    <string>__NAME__</string>
+    <string>__BACKUP_ROOT__</string>
+    <string>__KEEP__</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__PATH__</string>
+    <key>CFX_SITE</key>
+    <string>__SITE__</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>__HOUR__</integer>
+    <key>Minute</key>
+    <integer>__MINUTE__</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>__LOG_DIR__/cfmail-backup-__NAME__.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_DIR__/cfmail-backup-__NAME__.log</string>
+</dict>
+</plist>

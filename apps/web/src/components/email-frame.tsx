@@ -14,11 +14,15 @@ import { Skeleton } from "./ui/skeleton.tsx";
 // `allow-scripts` to a same-origin srcDoc frame would be XSS.
 export const SANDBOX = "allow-same-origin allow-popups allow-popups-to-escape-sandbox";
 
+// The hidden print frame (message-menu.tsx) needs `allow-modals` for print() and
+// nothing else: no scripts, no popups, no navigation.
+export const PRINT_SANDBOX = "allow-same-origin allow-modals";
+
 // Blocks scripts and every remote fetch except same-origin proxied images and
 // inline `data:` images; styles are inline-only (no remote stylesheets/fonts).
 // `frame-ancestors`/`sandbox` are ignored in a meta CSP — the iframe element's
 // `sandbox` attribute handles framing/script policy instead.
-const CSP =
+export const FRAME_CSP =
   "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; " +
   "font-src 'self' data:; script-src 'none'; base-uri 'none'; form-action 'none'";
 
@@ -42,7 +46,7 @@ function buildDoc(bodyHtml: string, c: Colors): string {
   const scheme = c.dark ? "dark" : "light";
   return (
     `<!doctype html><html><head><meta charset="utf-8">` +
-    `<meta http-equiv="Content-Security-Policy" content="${CSP}">` +
+    `<meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">` +
     `<style>` +
     `html{color-scheme:${scheme};-webkit-text-size-adjust:100%;text-size-adjust:100%}` +
     `html,body{margin:0}` +
@@ -74,7 +78,7 @@ export function EmailFrame({ html, className }: { html: string; className?: stri
   // from the DOM above; this is a MutationObserver subscription, not an init.
   useEffect(() => {
     const obs = new MutationObserver(() => setColors(frameColors()));
-    // react-doctor-disable-next-line no-initialize-state -- live theme subscription, not a one-time initializer
+    // live theme subscription, not a one-time initializer
     obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
     return () => obs.disconnect();
   }, []);

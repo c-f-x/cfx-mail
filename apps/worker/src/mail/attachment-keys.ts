@@ -1,4 +1,5 @@
 import { AppError } from "../errors.ts";
+import { isOwnDraftUpload } from "./blob-keys.ts";
 
 // Client-supplied attachment r2Keys must live in the caller's own upload
 // namespace (attachments.ts always writes `draft/<userId>/...`). Without this
@@ -8,9 +9,8 @@ export function assertOwnedAttachmentKeys(
   userId: string,
   attachments: ReadonlyArray<{ r2Key: string }> | undefined,
 ): void {
-  const prefix = `draft/${userId}/`;
   for (const att of attachments ?? []) {
-    if (!att.r2Key.startsWith(prefix)) {
+    if (!isOwnDraftUpload(userId, att.r2Key)) {
       throw new AppError("bad_request", "invalid attachment key");
     }
   }

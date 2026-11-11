@@ -40,7 +40,12 @@ export type Serialized<T> = {
 
 // ─── Raw-row DTOs ───────────────────────────────────────────────────────────
 
-export type ThreadDto = Serialized<typeof thread.$inferSelect>;
+// `subject` is the subject of the thread's first message as it was sent, the
+// line to show. The stored `subjectNorm` is lowercased and stripped of "Re:",
+// for matching replies.
+export type ThreadDto = Serialized<Omit<typeof thread.$inferSelect, "listId">> & {
+  subject: string;
+};
 // The stored correspondent key matching a message's sender, attached by the
 // thread-detail route so the reader can show which key verified a signature and
 // whether the owner has confirmed it out-of-band.
@@ -49,7 +54,38 @@ export interface MessagePgpKeyDto {
   source: ContactKeySource;
   verified: boolean;
 }
-export type MessageDto = Serialized<typeof message.$inferSelect> & {
+// The reader's fields only. Stored plaintext (`bodyText`, `toText`), R2 keys, sizes and
+// scores stay server-side: the body arrives from `/messages/:id/body`, and a long
+// conversation would otherwise ship every message's text twice.
+export type MessageDto = Pick<
+  Serialized<typeof message.$inferSelect>,
+  | "id"
+  | "mailboxId"
+  | "threadId"
+  | "direction"
+  | "messageIdHdr"
+  | "references"
+  | "fromName"
+  | "fromAddr"
+  | "deliveredTo"
+  | "toAddrs"
+  | "ccAddrs"
+  | "bccAddrs"
+  | "subject"
+  | "snippet"
+  | "flags"
+  | "receivedAt"
+  | "sentAt"
+  | "spamVerdict"
+  | "spamReasons"
+  | "spamAuth"
+  | "listUnsubscribe"
+  | "pgpEncrypted"
+  | "pgpSigned"
+  | "pgpVerify"
+  | "pgpKeyEvent"
+  | "createdAt"
+> & {
   pgpKey?: MessagePgpKeyDto | null;
 };
 // The resolved outbound payload + attempt counter stay server-side — drafts only
@@ -84,8 +120,6 @@ export interface MailboxSummaryDto {
   perms: number;
   unread: number;
   pgpMode: PgpMode;
-  /** Whether reader AI features (summaries, smart reply, thread summary) are on. */
-  aiFeatures: boolean;
   /** Opted out of the combined All Mail view (list, counts and sidebar badge). */
   excludeFromAll: boolean;
 }
@@ -138,9 +172,6 @@ export interface UserPrefs {
   timeFormat?: "12h" | "24h";
   // which maps service event/address links open in ("auto" picks by device)
   mapProvider?: "auto" | "google" | "apple";
-  // show the AI summary line under each row in the list (default on when the
-  // mailbox has AI features enabled). Purely a display toggle — no spend impact.
-  aiSummaries?: boolean;
   // reusable compose snippets, insertable at the caret from the composer
   templates?: EmailTemplate[];
 }
@@ -246,6 +277,12 @@ export interface MessageBodyDto {
   trackersBlocked: number;
 }
 
+/** Bodies of several messages of one thread, keyed by message id. A message
+ * without a stored body is left out. */
+export interface ThreadBodiesDto {
+  bodies: Record<string, MessageBodyDto>;
+}
+
 /**
  * Outcome of a List-Unsubscribe action. `unsubscribed` = handled server-side (an
  * RFC 8058 one-click POST or a mailto request was sent). `open` = the only target
@@ -257,15 +294,14 @@ export interface UnsubscribeResultDto {
   url?: string;
 }
 
-/** AI-drafted reply options for a message (may be empty if AI is unavailable). */
-export interface SmartReplyDto {
-  suggestions: string[];
-}
-
-/** AI catch-up summary of a thread as short bullets (empty if unavailable). */
-export interface ThreadSummaryDto {
-  bullets: string[];
-}
+/**
+ * Where an unsubscribe request would go, shown to the user before it is sent.
+ * `email` = a mail to one address; `one-click` = a POST to `host`; `link` = an
+ * https page on `host` the client opens.
+ */
+export type UnsubscribeTargetDto =
+  | { method: "email"; address: string }
+  | { method: "one-click" | "link"; host: string };
 
 export type MailView = (typeof MAIL_VIEWS)[number];
 export type FolderCountsDto = Record<MailView, { total: number; unread: number }>;
@@ -277,14 +313,11 @@ export interface ThreadListDto {
   /** Keyset cursor for the next (older) page, or null when the list is exhausted. */
   nextCursor?: string | null;
 }
-export interface ThreadDetailDto {
-  thread: ThreadDto;
-  messages: MessageDto[];
-}
 export interface FolderCountsResponseDto {
   counts: FolderCountsDto;
 }
 export interface MailboxListDto {
+  /** Ordered by domain, then personal before group before temp, then address. */
   mailboxes: MailboxSummaryDto[];
 }
 export interface MailboxSettingsDto {
@@ -294,12 +327,6 @@ export interface MailboxSettingsDto {
   signature: string | null;
   replyTo: string | null;
   spamFilter: SpamFilterLevel;
-  spamAiTokenCap: number | null;
-  spamUsage: { period: string; calls: number; tokens: number } | null;
-  // Reader AI features (summary/category, smart reply, thread summarize).
-  aiFeatures: boolean;
-  aiTokenCap: number | null;
-  aiUsage: { period: string; calls: number; tokens: number } | null;
   // Gateway PGP. The private key/passphrase are never sent; `pgpConfigured` says
   // whether a keypair exists, and the armored public key is shareable.
   pgpMode: PgpMode;
@@ -344,23 +371,6 @@ export interface MailboxMemberDto {
 export interface MailboxMembersDto {
   members: MailboxMemberDto[];
 }
-export interface MailboxInviteDto {
-  id: string;
-  email: string;
-  perms: number;
-  createdAt: string;
-}
-export interface MailboxInvitesDto {
-  invites: MailboxInviteDto[];
-}
-export interface DraftListDto {
-  drafts: DraftDto[];
-  /** Keyset cursor for the next (older) page, or null when the list is exhausted. */
-  nextCursor?: string | null;
-}
-export interface DraftDetailDto {
-  draft: DraftDto;
-}
 export interface LabelListDto {
   labels: LabelDto[];
 }
@@ -392,9 +402,6 @@ export interface SearchResultsDto {
 }
 export interface ContactsDto {
   contacts: ContactDto[];
-}
-export interface MeDto {
-  user: MeUserDto | null;
 }
 
 // ─── IMAP / app passwords ───────────────────────────────────────────────────

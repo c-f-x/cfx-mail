@@ -45,3 +45,9 @@ export async function enforceRateLimit(
 export function clientIp(headers: Headers): string {
   return headers.get("cf-connecting-ip") ?? headers.get("x-forwarded-for") ?? "unknown";
 }
+
+// Mail a user may send per hour. Immediate sends, scheduled sends and
+// unsubscribe mail all go out under the user's address, so they share it.
+export function enforceSendLimit(db: DB, userId: string): Promise<void> {
+  return enforceRateLimit(db, "send", userId, 60, 60 * 60 * 1000);
+}

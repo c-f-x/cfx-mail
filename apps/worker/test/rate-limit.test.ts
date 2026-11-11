@@ -1,7 +1,7 @@
 import type { DB } from "@cfmail/db";
 import { rateLimitCounter } from "@cfmail/db/schema";
 import { eq } from "drizzle-orm";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "../src/errors.ts";
 import { clientIp, enforceRateLimit } from "../src/rate-limit.ts";
 import { applyMigrationsOnce, db, resetDb } from "./support/app.ts";
@@ -82,7 +82,16 @@ describe("enforceRateLimit", () => {
         }),
       }),
     } as unknown as DB;
-    await expect(enforceRateLimit(broken, "send", "user-1", 1, WINDOW)).resolves.toBeUndefined();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await expect(enforceRateLimit(broken, "send", "user-1", 1, WINDOW)).resolves.toBeUndefined();
+      expect(logged).toHaveBeenCalledWith(
+        "rate limit check failed for send:user-1",
+        expect.objectContaining({ message: "d1 unavailable" }),
+      );
+    } finally {
+      logged.mockRestore();
+    }
   });
 });
 

@@ -43,7 +43,7 @@ function PdfView({ src, filename }: { src: string; filename: string }) {
     let cancelled = false;
     setUrl(null);
     setFailed(false);
-    (async () => {
+    void (async () => {
       try {
         const res = await fetch(src, { credentials: "same-origin" });
         if (!res.ok) throw new Error(`${res.status}`);

@@ -136,7 +136,7 @@ function RulesList({
 
   const invalidate = (id: string) => qc.invalidateQueries({ queryKey: keys.rules(id) });
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- onSuccess refreshes the rules cache via invalidate()
+  // onSuccess refreshes the rules cache via invalidate()
   const update = useMutation({
     mutationFn: ({ id, ...body }: { id: string; priority?: number; enabled?: boolean }) =>
       unwrap(rpc.rules[":id"].$patch({ param: { id }, json: body })),
@@ -144,19 +144,19 @@ function RulesList({
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- onSuccess refreshes the rules cache via invalidate()
+  // onSuccess refreshes the rules cache via invalidate()
   const remove = useMutation({
     mutationFn: (id: string) => unwrap(rpc.rules[":id"].$delete({ param: { id } })),
     onSuccess: () => invalidate(mailboxId),
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- onSuccess refreshes the target mailbox's rules cache via invalidate()
+  // onSuccess refreshes the target mailbox's rules cache via invalidate()
   const clone = useMutation({
     mutationFn: ({ id, targetId }: { id: string; targetId: string }) =>
       unwrap(rpc.rules[":id"].clone.$post({ param: { id }, json: { mailboxId: targetId } })),
     onSuccess: (res, vars) => {
-      invalidate(vars.targetId);
+      void invalidate(vars.targetId);
       if (res.strippedLabels.length) {
         toast.warning(
           `Cloned without labels not in the target mailbox: ${res.strippedLabels.join(", ")}`,
@@ -391,7 +391,7 @@ function RuleEditor({
         (a.type !== "autoReply" || (a.body ?? "").trim().length > 0),
     );
 
-  // eslint-disable-next-line react-doctor/query-mutation-missing-invalidation -- onSaved() (from RulesList) invalidates the rules cache on success
+  // onSaved() (from RulesList) invalidates the rules cache on success
   const save = useMutation({
     mutationFn: async () => {
       const body = {
