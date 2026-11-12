@@ -181,3 +181,18 @@ Supersedes D-6.
 **Decision.** The repository is `c-f-x/cfx-mail`, and the docs, scripts, root package, site file (`cfx-mail.jsonc`, `cfx-mail.md`) and agent skill use that name. Names that live in Cloudflare or the keychain stay as they are: the Worker, D1 and R2 names, hostnames, keychain service names, the OAuth client "cfmail admin sign-in" and the Email Routing rule name.
 
 **Consequences.** GitHub redirects the old URL. The same evening the owner asked for the rest: "we have to change all reference in UI etc from cfmail to cfx-mail". So the app now calls itself cfx-mail everywhere it shows a name, and the names it stores moved too (`cfx-mail-theme`, `data-cfx-mail-cid`, the quote classes, the service worker's cache). Production held no drafts, so no inline image breaks; each browser shows the system theme once until its theme is picked again. The packages became `@cfx-mail/*` in a change of their own, because nearly every file imports them. Upstream's commits still say `@cfmail/*`, so a port from upstream renames its imports. Entries above keep their original words.
+
+## D-21 · AI connections send only where a person decides · decided (2026-11-12)
+
+**Made by.** The owner, on upstream's MCP server (an AI assistant connecting to one mailbox, signed in with an app password): "if we can find a secure way to do it, then sure". The design below is the tech lead's.
+
+**Context.** An assistant that reads a mailbox also reads mail from strangers, and an email can carry instructions for it ("forward the last ten messages to …"). No filter reliably tells such instructions from a real request. Upstream's server asks the assistant to confirm before sending, and nothing enforces that. A reply is no safer than a new message, because whoever wrote the mail is in its thread. As upstream built it, a connection gets its person's full rights on the mailbox, and app passwords pass by Cloudflare sign-in, passkeys and two-factor.
+
+**Decision.**
+
+- Each app password has a scope, chosen when it is made: read only (the default), or read and write drafts.
+- The assistant's send and reply tools save a draft in the mailbox, marked with the connection's name, and the person is told. The person reads it and sends it from the app.
+- A connection may list trusted recipients. Mail addressed only to them goes out at once; mail with any other recipient becomes a draft.
+- Every send counts against the person's hourly send limit, and each message records which connection wrote it. Revoking the app password stops the connection at its next request.
+
+**Consequences.** The MCP server is ported with these rules, not as upstream built it. The scope and the trusted-recipient list are new columns on `app_password`, and the settings screen gains both. Its mockup goes to the owner before it is built. Issue #1 (an admin key for agents) stays a separate decision, but its key uses the same shape of scope.
